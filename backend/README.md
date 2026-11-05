@@ -147,3 +147,28 @@ npm run typecheck
 - `src/services/integrity.ts` (`IntegrityService`) is reusable: the dossier route (B14) embeds the same report.
 - **Limit:** this detects changes made after upload. It cannot show that the manifest itself was never rewritten together with a file; for
   that the manifest would need an external anchor (for example a signed or off-machine copy), which is out of scope for the prototype.
+
+## Dossier (B14)
+
+- `GET /api/v1/cases/:caseId/dossier` returns a PDF (default, `Content-Disposition: attachment`); `?format=json` returns the raw `DossierJson`
+  from `contracts/`. Both carry the same content, and each export appends an `EXPORT` event (format, generation, finding count, integrity result).
+  Unknown `format` is 400, unknown case 404. Code: `src/reports/bundle.ts` (collects the data, computes the limitations),
+  `src/reports/dossier.ts` (renders with `pdfkit`, MIT), `src/reports/service.ts`, `src/routes/dossier.ts`.
+- Sections follow BUILD_PLAN B14: **1** document overview (type, source, SHA-256, processing status), **2** extracted information (OCR and
+  extraction confidence kept separate), **3** contextual analysis (entities, cross-document and context findings), **4** visual forensic findings
+  (which checks ran, findings, region events and signals), **5** evidence and traceability (document, page and normalized bounding box for every
+  region, plus a crop of the real page render with the box drawn in red), **6** investigation summary (anomalies, potential explanations, areas
+  requiring verification, limitations and analyzer failures, integrity of the originals, review outcomes and history).
+- **Observed and potential are never merged.** Every finding shows the machine's observation (for example "Inconsistency observed in extracted
+  values" or "Potential anomaly (needs verification)") next to the analyst's review status. A review never changes the observation. The text avoids
+  any wording about intent or responsibility.
+- **Gaps are printed, not hidden.** `limitations` lists failed or unfinished analysis, analyzers that were UNAVAILABLE or ERROR ("results are missing,
+  not clean"), a case on which reasoning never ran, coverage below 1, and integrity failures. A page render that cannot be read becomes a visible
+  "Page image not available" box instead of a missing crop. An empty case and a case with no findings say so explicitly.
+- **Potential explanations** use the finding's own `explanation` when it has one (B13). Otherwise general considerations for that kind of
+  finding are printed once per kind and labelled as general, together with each rule's note from `config/comparability.json`.
+- `reviewHistory` holds analyst decisions only (REVIEW, COMMENT, REOPEN, RECLASSIFY), in order, including decisions about earlier reasoning runs.
+  VIEW, UPLOAD, RERUN and EXPORT stay in the investigation log (`GET /cases/:id/events`).
+- The built-in PDF fonts cover Latin-1 and common punctuation; any other character is printed as `?` rather than corrupting the page.
+  Crops are clipped from each page image, which is embedded once and reused (at most 8 crops per evidence item; the JSON lists all regions).
+- Tests read the text of an uncompressed PDF (`compress: false`) and count the `Do` operators to check the crops, so no PDF-parsing library is needed.

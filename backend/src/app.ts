@@ -19,6 +19,9 @@ import { EventLogReviews, JsonlEventLog } from "./services/eventLog.js";
 import { ReclassifyService, ReviewService } from "./services/review.js";
 import { reviewRouter } from "./routes/review.js";
 import { integrityRouter } from "./routes/integrity.js";
+import { dossierRouter } from "./routes/dossier.js";
+import { DossierBuilder } from "./reports/bundle.js";
+import { DossierService } from "./reports/service.js";
 import { IntegrityService } from "./services/integrity.js";
 import { JsonOverridesRepository, OverlayAnalysisRepository, type OverridesRepository } from "./repo/overrides.js";
 import { ReasoningPipeline, createStubReasoning, engineReasoning, type ReasoningFn } from "./services/reasoning.js";
@@ -61,6 +64,7 @@ export interface AppDeps {
   review: ReviewService;
   reclassify: ReclassifyService;
   integrity: IntegrityService;
+  dossier: DossierService;
   evidence: EvidenceRepository;
   reviews: ReviewSource;
   jobs: JobService;
@@ -115,6 +119,9 @@ export function buildDeps(config: AppConfig, logger: Logger, overrides: DepOverr
           fixtureIdFor: (docId) => new MockAnalysisClient({ fixturesDir: config.fixturesDir, manifest }).fixtureIdFor(docId),
         })
       : engineReasoning);
+  const reviews: ReviewSource = overrides.reviews ?? new EventLogReviews(events);
+  const caseService = new CaseService(caseRepo, documents, jobs, evidence);
+  const integrity = new IntegrityService(documents, manifest, storage, logger);
   const reviewService = new ReviewService(evidence, events);
   const reclassify = new ReclassifyService(documents, analysis, classificationOverrides, jobs, events, overrides.eventsNow);
   const reasoning = new ReasoningPipeline({
@@ -138,11 +145,16 @@ export function buildDeps(config: AppConfig, logger: Logger, overrides: DepOverr
     events,
     review: reviewService,
     reclassify,
-    integrity: new IntegrityService(documents, manifest, storage, logger),
+    integrity,
+    dossier: new DossierService(
+      new DossierBuilder({ cases: caseService, documents, jobs, analysis, evidence, reviews, events, integrity }),
+      storage,
+      events,
+    ),
     evidence,
-    reviews: overrides.reviews ?? new EventLogReviews(events),
+    reviews,
     jobs,
-    cases: new CaseService(caseRepo, documents, jobs, evidence),
+    cases: caseService,
     upload: new UploadService(ingest, documents, jobs, config.pipelineVersion, events),
     analysisClient,
     reasoning,
@@ -186,6 +198,7 @@ export function createApp(deps: AppDeps): Express {
     }),
   );
   api.use(integrityRouter({ cases: deps.cases, integrity: deps.integrity, requireAuth: deps.requireAuth }));
+  api.use(dossierRouter({ cases: deps.cases, dossier: deps.dossier, requireAuth: deps.requireAuth }));
   api.use(
     reviewRouter({ review: deps.review, reclassify: deps.reclassify, cases: deps.cases, log: deps.events, requireAuth: deps.requireAuth }),
   );
