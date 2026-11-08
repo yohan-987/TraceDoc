@@ -488,32 +488,44 @@
   "priority": {
     "perCase": {
       "priorityBand": "low",
-      "score": 0.0,
-      "confidence": 0.0,
-      "coverage": 1.0,
-      "contributingFindingIds": []
+      "score": 0,
+      "confidence": 0,
+      "coverage": 0.833,
+      "contributingFindingIds": [],
+      "missingAnalyzers": [
+        "page.field_extractor"
+      ]
     },
     "perDocument": {
       "D-11": {
         "priorityBand": "low",
-        "score": 0.0,
-        "confidence": 0.0,
-        "coverage": 1.0,
-        "contributingFindingIds": []
+        "score": 0,
+        "confidence": 0,
+        "coverage": 0.833,
+        "contributingFindingIds": [],
+        "missingAnalyzers": [
+          "page.field_extractor"
+        ]
       },
       "D-12": {
         "priorityBand": "low",
-        "score": 0.0,
-        "confidence": 0.0,
-        "coverage": 1.0,
-        "contributingFindingIds": []
+        "score": 0,
+        "confidence": 0,
+        "coverage": 0.833,
+        "contributingFindingIds": [],
+        "missingAnalyzers": [
+          "page.field_extractor"
+        ]
       },
       "D-13": {
         "priorityBand": "low",
-        "score": 0.0,
-        "confidence": 0.0,
-        "coverage": 1.0,
-        "contributingFindingIds": []
+        "score": 0,
+        "confidence": 0,
+        "coverage": 0.833,
+        "contributingFindingIds": [],
+        "missingAnalyzers": [
+          "page.field_extractor"
+        ]
       }
     },
     "provenance": {
@@ -524,7 +536,7 @@
         "severityWeight_low": 0.15,
         "severityWeight_medium": 0.4,
         "severityWeight_high": 0.7,
-        "categoryWeight_cross_document": 1.0,
+        "categoryWeight_cross_document": 1,
         "categoryWeight_context": 0.9,
         "categoryWeight_visual": 0.8,
         "categoryWeight_pdf_structure": 0.7,
@@ -532,7 +544,9 @@
         "bandLowBelow": 0.25,
         "bandModerateBelow": 0.5,
         "bandHighBelow": 0.75,
-        "weakEvidenceCap": 0.49
+        "weakEvidenceCap": 0.49,
+        "lowCoverageBelow": 0.75,
+        "expectedAnalyzers": "ocr,page.field_extractor,pdf.textlayer,pdf.fonts,pdf.metadata,pdf.revisions,image.ela,image.noise,image.copymove,signature"
       },
       "inputSha256": "fb060278c713902cd0d99b555ae87655f0019bd13052f3857a9696a0534984f7",
       "processedAt": "2026-11-01T09:00:00Z",

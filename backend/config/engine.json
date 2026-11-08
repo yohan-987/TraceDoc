@@ -81,6 +81,19 @@
       "moderateBelow": 0.5,
       "highBelow": 0.75
     },
-    "weakEvidenceCap": 0.49
+    "weakEvidenceCap": 0.49,
+    "expectedAnalyzers": [
+      "ocr",
+      "page.field_extractor",
+      "pdf.textlayer",
+      "pdf.fonts",
+      "pdf.metadata",
+      "pdf.revisions",
+      "image.ela",
+      "image.noise",
+      "image.copymove",
+      "signature"
+    ],
+    "lowCoverageBelow": 0.75
   }
 }

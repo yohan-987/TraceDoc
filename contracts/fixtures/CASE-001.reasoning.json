@@ -522,7 +522,7 @@
       "suggestedLinks": [
         {
           "entityId": "E-001",
-          "score": 100.0,
+          "score": 100,
           "method": "name_token_sort"
         }
       ],
@@ -654,7 +654,7 @@
             "ruleType": "MUST_AGREE",
             "valueA": "Aarav Kumar Sharma",
             "valueB": "Aarav Sharma",
-            "tokenSortRatio": 80.0,
+            "tokenSortRatio": 80,
             "entityResolution": "RESOLVED",
             "legitimateDifferenceRules": "none apply to semantic type full_name"
           },
@@ -722,7 +722,7 @@
             "ruleType": "MUST_AGREE",
             "valueA": "Aarav Sharma",
             "valueB": "Aarav Kumar Sharma",
-            "tokenSortRatio": 80.0,
+            "tokenSortRatio": 80,
             "entityResolution": "SUGGESTED",
             "confidenceCapped": "true",
             "legitimateDifferenceRules": "none apply to semantic type full_name"
@@ -1052,7 +1052,7 @@
       "priorityBand": "critical",
       "score": 0.877,
       "confidence": 0.8,
-      "coverage": 0.923,
+      "coverage": 0.667,
       "contributingFindingIds": [
         "F-0001",
         "F-0002",
@@ -1060,41 +1060,62 @@
         "F-0004",
         "F-0005",
         "F-0006"
-      ]
+      ],
+      "missingAnalyzers": [
+        "page.field_extractor",
+        "pdf.metadata",
+        "pdf.revisions",
+        "signature"
+      ],
+      "incompleteCoverage": true
     },
     "perDocument": {
       "D-01": {
         "priorityBand": "high",
         "score": 0.687,
         "confidence": 0.91,
-        "coverage": 1.0,
+        "coverage": 0.833,
         "contributingFindingIds": [
           "F-0001",
           "F-0002"
+        ],
+        "missingAnalyzers": [
+          "page.field_extractor"
         ]
       },
       "D-02": {
         "priorityBand": "critical",
         "score": 0.765,
         "confidence": 0.78,
-        "coverage": 0.8,
+        "coverage": 0.667,
         "contributingFindingIds": [
           "F-0001",
           "F-0002",
           "F-0003",
           "F-0005"
-        ]
+        ],
+        "missingAnalyzers": [
+          "page.field_extractor",
+          "signature"
+        ],
+        "incompleteCoverage": true
       },
       "D-03": {
         "priorityBand": "high",
         "score": 0.501,
         "confidence": 0.75,
-        "coverage": 1.0,
+        "coverage": 0.5,
         "contributingFindingIds": [
           "F-0003",
           "F-0004",
           "F-0006"
-        ]
+        ],
+        "missingAnalyzers": [
+          "page.field_extractor",
+          "pdf.metadata",
+          "pdf.revisions"
+        ],
+        "incompleteCoverage": true
       }
     },
     "provenance": {
@@ -1105,7 +1126,7 @@
         "severityWeight_low": 0.15,
         "severityWeight_medium": 0.4,
         "severityWeight_high": 0.7,
-        "categoryWeight_cross_document": 1.0,
+        "categoryWeight_cross_document": 1,
         "categoryWeight_context": 0.9,
         "categoryWeight_visual": 0.8,
         "categoryWeight_pdf_structure": 0.7,
@@ -1113,7 +1134,9 @@
         "bandLowBelow": 0.25,
         "bandModerateBelow": 0.5,
         "bandHighBelow": 0.75,
-        "weakEvidenceCap": 0.49
+        "weakEvidenceCap": 0.49,
+        "lowCoverageBelow": 0.75,
+        "expectedAnalyzers": "ocr,page.field_extractor,pdf.textlayer,pdf.fonts,pdf.metadata,pdf.revisions,image.ela,image.noise,image.copymove,signature"
       },
       "inputSha256": "b227b936a46de4167f746a9e8791fadd185e1e829377fe66ae94e0cdbceb52af",
       "processedAt": "2026-11-01T09:00:00Z",

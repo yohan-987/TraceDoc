@@ -118,7 +118,11 @@ export function computeLimitations(b: DossierBundle, reasoningRan: boolean): str
   else if (!reasoningRan) out.push("The reasoning engine has not run for this case, so there are no findings. That does not mean there are no inconsistencies.");
 
   const cov = b.json.summary.priority?.coverage;
-  if (cov !== undefined && cov < 1) out.push(`Analysis coverage is ${cov}: some analyzers did not run, so the priority is based on part of the available checks.`);
+  const prio = b.json.summary.priority;
+  if (cov !== undefined && cov < 1) {
+    const missing = prio?.missingAnalyzers?.length ? ` Checks that did not run: ${prio.missingAnalyzers.join(", ")}.` : "";
+    out.push(`Analysis coverage is ${cov}: some analyzers did not run, so the priority is based on part of the available checks.${missing}${prio?.incompleteCoverage ? " Coverage is below the configured threshold, so a low priority here is not an all-clear." : ""}`);
+  }
 
   for (const d of b.json.integrity.documents) {
     if (d.status === "FAIL") {

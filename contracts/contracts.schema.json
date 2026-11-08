@@ -936,6 +936,17 @@
         "coverage": {
           "type": "number"
         },
+        "missingAnalyzers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Expected analyzers that did not report for the case (or for the document), so their checks did not run. Absent when none."
+        },
+        "incompleteCoverage": {
+          "type": "boolean",
+          "description": "True when coverage is below the configured threshold: the band rests on part of the intended checks."
+        },
         "contributingFindingIds": {
           "type": "array",
           "items": {

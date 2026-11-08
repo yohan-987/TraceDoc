@@ -62,7 +62,7 @@ describe("GET /cases/:id/dossier?format=json", () => {
     const { json, mapping } = await analysed();
     const d = await json();
     expect(d.limitations.some((l) => l.includes(mapping["D-02"]!) && l.includes("signature") && l.includes("UNAVAILABLE") && /missing, not clean/.test(l))).toBe(true);
-    expect(d.limitations.some((l) => /coverage is 0\.9/.test(l))).toBe(true);
+    expect(d.limitations.some((l) => /coverage is 0\.\d+/.test(l) && l.includes("Checks that did not run:") && l.includes("pdf.metadata"))).toBe(true);
   });
 
   it("includes analyst decisions (review, comment, reopen, reclassify) but not views, uploads or exports; machine observations stay as they were", async () => {

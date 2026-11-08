@@ -5,7 +5,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { ReasoningOutput } from "../../../contracts/reasoning";
 import type { AnalyzeResponse, AnalyzerStatus, Finding, Severity } from "../../../contracts/types";
-import { DEFAULT_PRIORITY_CONFIG, bandOf, computePriority } from "./priorityEngine";
+import { DEFAULT_PRIORITY_CONFIG, PriorityConfigError, bandOf, computePriority, effectiveStatuses, validatePriorityConfig } from "./priorityEngine";
 
 const fx = resolve(dirname(fileURLToPath(import.meta.url)), "../../../contracts/fixtures");
 const readJson = <T>(p: string): T => JSON.parse(readFileSync(resolve(fx, p), "utf8")) as T;
@@ -29,6 +29,8 @@ function F(severity: Severity, confidence: number, category: Finding["category"]
 }
 const OK: Record<string, AnalyzerStatus> = { ocr: "AVAILABLE", "image.ela": "AVAILABLE" };
 const STAT = { D1: OK };
+/** The pure coverage arithmetic, without the expected-analyzer list (that part is tested in "expected analyzers"). */
+const NONE = { config: { ...DEFAULT_PRIORITY_CONFIG, expectedAnalyzers: [] as string[] } };
 
 describe("fixtures", () => {
   for (const [caseId, docs] of Object.entries(CASES)) {
@@ -46,8 +48,8 @@ describe("fixtures", () => {
 describe("spec scenarios", () => {
   it("an analyzer outage lowers coverage but does not lower the band or the score", () => {
     const findings = [F("high", 0.9), F("medium", 0.7, "visual")];
-    const healthy = computePriority({ findings, analyzerStatuses: { D1: { ocr: "AVAILABLE", "image.ela": "AVAILABLE", "image.noise": "AVAILABLE", signature: "AVAILABLE" } } });
-    const outage = computePriority({ findings, analyzerStatuses: { D1: { ocr: "AVAILABLE", "image.ela": "AVAILABLE", "image.noise": "UNAVAILABLE", signature: "ERROR" } } });
+    const healthy = computePriority({ findings, analyzerStatuses: { D1: { ocr: "AVAILABLE", "image.ela": "AVAILABLE", "image.noise": "AVAILABLE", signature: "AVAILABLE" } } }, NONE);
+    const outage = computePriority({ findings, analyzerStatuses: { D1: { ocr: "AVAILABLE", "image.ela": "AVAILABLE", "image.noise": "UNAVAILABLE", signature: "ERROR" } } }, NONE);
     assert.equal(healthy.perCase.coverage, 1);
     assert.equal(outage.perCase.coverage, 0.5);
     assert.equal(outage.perCase.priorityBand, healthy.perCase.priorityBand);
@@ -55,12 +57,12 @@ describe("spec scenarios", () => {
     assert.equal(outage.perDocument["D1"]?.coverage, 0.5);
   });
   it("a missing analyzer contributes nothing: no findings and an outage is low priority, with low coverage, not 'clean'", () => {
-    const r = computePriority({ findings: [], analyzerStatuses: { D1: { ocr: "AVAILABLE", ela: "UNAVAILABLE", noise: "UNAVAILABLE", fonts: "UNAVAILABLE" } } });
+    const r = computePriority({ findings: [], analyzerStatuses: { D1: { ocr: "AVAILABLE", ela: "UNAVAILABLE", noise: "UNAVAILABLE", fonts: "UNAVAILABLE" } } }, NONE);
     assert.deepEqual([r.perCase.priorityBand, r.perCase.score, r.perCase.confidence, r.perCase.coverage, r.perCase.contributingFindingIds], ["low", 0, 0, 0.25, []]);
   });
   it("NOT_APPLICABLE analyzers are excluded from coverage; all not applicable gives 0", () => {
-    assert.equal(computePriority({ findings: [], analyzerStatuses: { D1: { a: "AVAILABLE", b: "NOT_APPLICABLE", c: "NOT_APPLICABLE" } } }).perCase.coverage, 1);
-    assert.equal(computePriority({ findings: [], analyzerStatuses: { D1: { a: "NOT_APPLICABLE" } } }).perCase.coverage, 0);
+    assert.equal(computePriority({ findings: [], analyzerStatuses: { D1: { a: "AVAILABLE", b: "NOT_APPLICABLE", c: "NOT_APPLICABLE" } } }, NONE).perCase.coverage, 1);
+    assert.equal(computePriority({ findings: [], analyzerStatuses: { D1: { a: "NOT_APPLICABLE" } } }, NONE).perCase.coverage, 0);
   });
 });
 
@@ -149,7 +151,7 @@ describe("per document and per case", () => {
     assert.deepEqual(r.perCase.contributingFindingIds, [f1.findingId, f2.findingId]);
   });
   it("case coverage pools the analyzers of all documents", () => {
-    const r = computePriority({ findings: [], analyzerStatuses: { D1: { a: "AVAILABLE", b: "AVAILABLE" }, D2: { a: "AVAILABLE", b: "UNAVAILABLE" } } });
+    const r = computePriority({ findings: [], analyzerStatuses: { D1: { a: "AVAILABLE", b: "AVAILABLE" }, D2: { a: "AVAILABLE", b: "UNAVAILABLE" } } }, NONE);
     assert.equal(r.perCase.coverage, 0.75);
     assert.equal(r.perDocument["D1"]?.coverage, 1);
     assert.equal(r.perDocument["D2"]?.coverage, 0.5);
@@ -164,6 +166,7 @@ describe("contract of the function", () => {
       severityWeight_info: 0.05, severityWeight_low: 0.15, severityWeight_medium: 0.4, severityWeight_high: 0.7,
       categoryWeight_cross_document: 1, categoryWeight_context: 0.9, categoryWeight_visual: 0.8, categoryWeight_pdf_structure: 0.7, categoryWeight_extraction: 0.4,
       bandLowBelow: 0.25, bandModerateBelow: 0.5, bandHighBelow: 0.75, weakEvidenceCap: 0.49,
+      lowCoverageBelow: 0.75, expectedAnalyzers: DEFAULT_PRIORITY_CONFIG.expectedAnalyzers.join(","),
     });
     assert.equal(p.processedAt, "2026-01-01T00:00:00Z");
   });
@@ -188,4 +191,83 @@ describe("contract of the function", () => {
       assert.ok(s >= 0 && s <= 1);
     }
   });
+});
+
+describe("expected analyzers (a missing check is never clean)", () => {
+  const conflict = [F("high", 0.9)];
+  const reported = (o: Record<string, AnalyzerStatus>) => ({ D1: o });
+
+  it("a case with a conflict and only OCR available is not reported as fully covered", () => {
+    const r = computePriority({ findings: conflict, analyzerStatuses: reported({ ocr: "AVAILABLE" }) });
+    assert.ok(r.perCase.coverage < 0.5, String(r.perCase.coverage));
+    assert.equal(r.perCase.incompleteCoverage, true);
+    assert.ok(r.perCase.missingAnalyzers?.includes("image.copymove") && !r.perCase.missingAnalyzers.includes("ocr"));
+    assert.deepEqual(r.perDocument["D1"]?.missingAnalyzers, r.perCase.missingAnalyzers);
+  });
+  it("the same findings, nothing else changed: coverage drops but score and band do not move", () => {
+    const full = computePriority({ findings: conflict, analyzerStatuses: reported(Object.fromEntries(DEFAULT_PRIORITY_CONFIG.expectedAnalyzers.map((id) => [id, "AVAILABLE" as const]))) });
+    const ocrOnly = computePriority({ findings: conflict, analyzerStatuses: reported({ ocr: "AVAILABLE" }) });
+    assert.equal(full.perCase.coverage, 1);
+    assert.equal(full.perCase.incompleteCoverage, undefined);
+    assert.equal(full.perCase.missingAnalyzers, undefined);
+    assert.equal(ocrOnly.perCase.score, full.perCase.score);
+    assert.equal(ocrOnly.perCase.priorityBand, full.perCase.priorityBand);
+  });
+  it("no findings and no analyzers reported: low band, coverage 0 and flagged, not clean", () => {
+    const r = computePriority({ findings: [], analyzerStatuses: { D1: {} } });
+    assert.deepEqual([r.perCase.priorityBand, r.perCase.coverage, r.perCase.incompleteCoverage], ["low", 0, true]);
+    assert.deepEqual(r.perCase.missingAnalyzers, [...DEFAULT_PRIORITY_CONFIG.expectedAnalyzers].sort());
+  });
+  it("NOT_APPLICABLE is not missing, and a family that reports only NOT_APPLICABLE does not apply to the document", () => {
+    const image = effectiveStatuses({ ocr: "AVAILABLE", "pdf.text_layer_words": "NOT_APPLICABLE", "image.ela": "AVAILABLE" }, DEFAULT_PRIORITY_CONFIG.expectedAnalyzers);
+    assert.ok(!image.missing.includes("pdf.fonts") && !image.missing.includes("pdf.metadata") && !image.missing.includes("pdf.revisions"));
+    assert.ok(image.missing.includes("image.noise") && image.missing.includes("signature"));
+    // a PDF that reports some pdf.* analyzers: the others it should have run are missing
+    const pdf = effectiveStatuses({ ocr: "AVAILABLE", "pdf.text_layer_words": "AVAILABLE" }, DEFAULT_PRIORITY_CONFIG.expectedAnalyzers);
+    assert.ok(pdf.missing.includes("pdf.fonts") && pdf.missing.includes("pdf.metadata"));
+  });
+  it("a family with no reported member is missing (an analyzer that was never built is not 'not applicable')", () => {
+    const s = effectiveStatuses({ ocr: "AVAILABLE" }, ["ocr", "pdf.fonts"]);
+    assert.deepEqual(s.missing, ["pdf.fonts"]);
+  });
+  it("reported UNAVAILABLE or ERROR expected analyzers are listed as missing; unexpected extra analyzers still count", () => {
+    const s = effectiveStatuses({ ocr: "AVAILABLE", signature: "UNAVAILABLE", "image.ela": "ERROR", extra: "AVAILABLE" }, ["ocr", "signature", "image.ela"]);
+    assert.deepEqual(s.missing.sort(), ["image.ela", "signature"]);
+    assert.equal(s.statuses.filter((x) => x === "AVAILABLE").length, 2);
+  });
+  it("the threshold is exclusive: coverage equal to lowCoverageBelow is not flagged", () => {
+    const cfg = { ...DEFAULT_PRIORITY_CONFIG, expectedAnalyzers: ["a", "b"], lowCoverageBelow: 0.5 };
+    assert.equal(computePriority({ findings: [], analyzerStatuses: reported({ a: "AVAILABLE" }) }, { config: cfg }).perCase.incompleteCoverage, undefined);
+    assert.equal(computePriority({ findings: [], analyzerStatuses: reported({}) }, { config: cfg }).perCase.incompleteCoverage, true);
+  });
+  it("case-level missing analyzers are the sorted union over documents", () => {
+    const cfg = { ...DEFAULT_PRIORITY_CONFIG, expectedAnalyzers: ["a", "b", "c"] };
+    const r = computePriority({ findings: [], analyzerStatuses: { D1: { a: "AVAILABLE", b: "AVAILABLE" }, D2: { a: "AVAILABLE", c: "AVAILABLE" } } }, { config: cfg });
+    assert.deepEqual(r.perCase.missingAnalyzers, ["b", "c"]);
+    assert.deepEqual(r.perDocument["D1"]?.missingAnalyzers, ["c"]);
+  });
+  it("does not mutate its input and is deterministic", () => {
+    const input = deepFreeze({ findings: conflict, analyzerStatuses: reported({ ocr: "AVAILABLE" }) });
+    assert.deepStrictEqual(computePriority(input), computePriority(input));
+  });
+});
+
+describe("expected analyzers: configuration is validated", () => {
+  const bad = (patch: Record<string, unknown>) => () => validatePriorityConfig({ ...DEFAULT_PRIORITY_CONFIG, ...patch } as never);
+  it("accepts the shipped configuration", () => assert.doesNotThrow(() => validatePriorityConfig(DEFAULT_PRIORITY_CONFIG)));
+  for (const [label, patch] of [
+    ["an empty list", { expectedAnalyzers: [] }],
+    ["a missing list", { expectedAnalyzers: undefined }],
+    ["a non-list", { expectedAnalyzers: "ocr" }],
+    ["an empty id", { expectedAnalyzers: ["ocr", ""] }],
+    ["a padded id", { expectedAnalyzers: ["ocr "] }],
+    ["a non-string id", { expectedAnalyzers: ["ocr", 3] }],
+    ["duplicates", { expectedAnalyzers: ["ocr", "ocr"] }],
+    ["a zero threshold", { lowCoverageBelow: 0 }],
+    ["a threshold above 1", { lowCoverageBelow: 1.2 }],
+    ["a NaN threshold", { lowCoverageBelow: Number.NaN }],
+    ["a missing threshold", { lowCoverageBelow: undefined }],
+  ] as const) {
+    it(`rejects ${label}`, () => assert.throws(bad(patch), PriorityConfigError));
+  }
 });

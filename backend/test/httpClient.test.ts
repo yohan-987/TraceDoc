@@ -319,7 +319,7 @@ describe("the backend with ANALYSIS_MODE=http", () => {
 
     const summary = (await t.agent.get("/api/v1/cases/CASE-001").expect(200)).body as CaseSummary;
     expect(summary.jobs.map((j) => j.status)).toEqual(["DONE", "PARTIAL", "DONE"]);
-    expect(summary.priority).toMatchObject({ coverage: 0.923 });
+    expect(summary.priority).toMatchObject({ coverage: 0.667, incompleteCoverage: true });
     const findings = (await t.agent.get("/api/v1/cases/CASE-001/findings").expect(200)).body;
     expect(findings.findings.map((f: { finding: { type: string } }) => f.finding.type)).toContain("DOB_CONFLICT");
     const detail = (await t.agent.get(`/api/v1/documents/${mapping["D-01"]}`).expect(200)).body as DocumentDetail;

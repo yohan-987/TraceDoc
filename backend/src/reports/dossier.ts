@@ -259,6 +259,9 @@ function cover(doc: Pdf, b: DossierBundle): void {
   para(doc, p
     ? `Priority: ${p.priorityBand}   (score ${pct(p.score)}, confidence ${pct(p.confidence)}, coverage ${pct(p.coverage)})`
     : "Priority: not available (no reasoning run for this case)", { bold: true, size: 10.5 });
+  if (p?.incompleteCoverage) {
+    para(doc, safe(`Incomplete coverage: ${p.missingAnalyzers?.length ?? 0} expected check(s) did not run${p.missingAnalyzers?.length ? ` (${p.missingAnalyzers.join(", ")})` : ""}. This priority rests on part of the intended checks; a low band here does not mean the missing checks found nothing.`), { bold: true, size: 9.5 });
+  }
   para(doc, "Priority orders cases for human review. It is not a probability and not a conclusion. Confidence and coverage are reported separately: low coverage means some checks did not run.", { muted: true });
   para(doc, "How to read this document. Every finding is an observation or a potential anomaly in the documents as analysed. None of them states or implies why a difference exists or who is responsible. The machine's observation and the analyst's review are shown side by side, and a review never changes the observation. OCR output is a claim, not ground truth.", { muted: true });
   doc.moveDown(0.4);

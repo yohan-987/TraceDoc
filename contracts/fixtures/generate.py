@@ -507,8 +507,30 @@ SEV_W = {"info": 0.05, "low": 0.15, "medium": 0.40, "high": 0.70}
 CAT_W = {"cross_document": 1.0, "context": 0.9, "visual": 0.8, "pdf_structure": 0.7, "extraction": 0.4}
 BANDS = [(0.25, "low"), (0.50, "moderate"), (0.75, "high")]
 WEAK_CAP = 0.49
+_ENGINE = json.loads((HERE.parent.parent / "backend" / "config" / "engine.json").read_text())["priority"]
+EXPECTED_ANALYZERS = _ENGINE["expectedAnalyzers"]
+LOW_COVERAGE_BELOW = _ENGINE["lowCoverageBelow"]
 PRI_CFG = {**{f"severityWeight_{k}": v for k, v in SEV_W.items()}, **{f"categoryWeight_{k}": v for k, v in CAT_W.items()},
-           "bandLowBelow": 0.25, "bandModerateBelow": 0.50, "bandHighBelow": 0.75, "weakEvidenceCap": WEAK_CAP}
+           "bandLowBelow": 0.25, "bandModerateBelow": 0.50, "bandHighBelow": 0.75, "weakEvidenceCap": WEAK_CAP,
+           "lowCoverageBelow": LOW_COVERAGE_BELOW, "expectedAnalyzers": ",".join(EXPECTED_ANALYZERS)}
+
+
+def effective_statuses(reported):
+    """Reported statuses plus UNAVAILABLE for every expected analyzer the document did not report (a family whose reported
+    members are all NOT_APPLICABLE does not apply). Mirrors backend/src/engine/priorityEngine.ts effectiveStatuses."""
+    statuses, missing = list(reported.values()), []
+    for aid in EXPECTED_ANALYZERS:
+        if aid in reported:
+            if reported[aid] in ("UNAVAILABLE", "ERROR"):
+                missing.append(aid)
+            continue
+        siblings = [st for other, st in reported.items() if other.split(".")[0] == aid.split(".")[0]]
+        if siblings and all(st == "NOT_APPLICABLE" for st in siblings):
+            statuses.append("NOT_APPLICABLE")
+            continue
+        statuses.append("UNAVAILABLE")
+        missing.append(aid)
+    return statuses, sorted(missing)
 
 
 def band(score):
@@ -518,7 +540,7 @@ def band(score):
     return "critical"
 
 
-def priority(findings, analyzers_status):
+def priority(findings, analyzers_status, missing=()):
     by_cat = {}
     for f in findings:
         by_cat.setdefault(f["category"], []).append(f)
@@ -536,8 +558,14 @@ def priority(findings, analyzers_status):
     conf = round(sum(SEV_W[f["severity"]] * f["confidence"] for f in findings) / wsum, 2) if findings else 0.0
     ran = sum(1 for s in analyzers_status if s == "AVAILABLE")
     expected = sum(1 for s in analyzers_status if s in ("AVAILABLE", "UNAVAILABLE", "ERROR"))
-    return {"priorityBand": band(score), "score": score, "confidence": conf, "coverage": round(ran / expected, 3) if expected else 0.0,
-            "contributingFindingIds": [f["findingId"] for f in findings]}
+    coverage = round(ran / expected, 3) if expected else 0.0
+    out = {"priorityBand": band(score), "score": score, "confidence": conf, "coverage": coverage,
+           "contributingFindingIds": [f["findingId"] for f in findings]}
+    if missing:
+        out["missingAnalyzers"] = list(missing)
+    if coverage < LOW_COVERAGE_BELOW:
+        out["incompleteCoverage"] = True
+    return out
 
 
 def finding_docs(f):
@@ -546,11 +574,13 @@ def finding_docs(f):
 
 def build_priority(case, doc_ids):
     fs = FINDINGS[case]
-    per_doc = {}
+    per_doc, allst, allmiss = {}, [], set()
     for did in doc_ids:
-        per_doc[did] = priority([f for f in fs if did in finding_docs(f)], built[did]["an"].values())
-    allst = [s for did in doc_ids for s in built[did]["an"].values()]
-    return {"perCase": priority(fs, allst), "perDocument": per_doc,
+        statuses, missing = effective_statuses(built[did]["an"])
+        per_doc[did] = priority([f for f in fs if did in finding_docs(f)], statuses, missing)
+        allst += statuses
+        allmiss.update(missing)
+    return {"perCase": priority(fs, allst, sorted(allmiss)), "perDocument": per_doc,
             "provenance": prov("priorityEngine", "AVAILABLE", case_sha(doc_ids), PRI_CFG)}
 
 

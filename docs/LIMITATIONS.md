@@ -6,7 +6,7 @@ What TraceDocs does not do, stated plainly. Findings are observations or potenti
 - **No analysis of new documents yet.** The backend recognises the recorded fixture documents by file hash and replays their recorded OCR and signals. Any other file fails with an explicit reason, never as "clean". The Python service that would perform real OCR, extraction and forensics is not built.
 - **Fixture results are synthetic.** Every number in the sample cases comes from hand-built fixtures. No detector accuracy, OCR accuracy or false-positive rate has been measured.
 - **Priority is an ordering aid.** It is not a probability of fraud, and its weights and thresholds are untuned starting values.
-- **Missing evidence is not clean evidence.** An analyzer that is unavailable, errored or not applicable lowers coverage and is shown as such.
+- **Missing evidence is not clean evidence.** An expected analyzer that is unavailable, errored or not reported at all lowers coverage and is listed as missing; below 0.75 coverage the priority is flagged as incomplete. The expected list is configuration (`priority.expectedAnalyzers`), so the checks that are not built yet (for example PDF structure, signature) show up as missing instead of being ignored. NOT_APPLICABLE is excluded from coverage. Coverage never changes the score or the band: a low band with incomplete coverage means "nothing found by the checks that ran", not "nothing wrong".
 
 ## Correlation
 - **Related cases are leads.** They match exact id_number, account_number and file hash only. The same person can legitimately appear in two cases; a match does not indicate wrongdoing. Names, addresses and amounts are never compared across cases.

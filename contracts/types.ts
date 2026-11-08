@@ -196,6 +196,10 @@ export interface PriorityResult {
   score: number;
   confidence: number; // reported separately from score
   coverage: number; // share of expected analyzers that actually ran
+  /** Expected analyzers that did not report for the case (or for the document), so their checks did not run. Absent when none. */
+  missingAnalyzers?: string[];
+  /** True when coverage is below the configured threshold: the band rests on part of the intended checks. */
+  incompleteCoverage?: boolean;
   contributingFindingIds: string[];
 }
 

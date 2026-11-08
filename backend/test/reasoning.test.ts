@@ -76,10 +76,13 @@ describe("reasoning runs by itself when the last document finishes", () => {
     // priority: band, confidence and coverage are separate numbers
     const summary = (await agent.get("/api/v1/cases/CASE-001").expect(200)).body as CaseSummary;
     expect(summary.priority).toMatchObject({ priorityBand: expect.any(String), score: expect.any(Number), confidence: expect.any(Number), coverage: expect.any(Number) });
-    // D-02's signature analyzer is UNAVAILABLE in the fixture: coverage says so, the band does not move
-    expect(summary.priority!.coverage).toBe(0.923);
+    // D-02's signature analyzer is UNAVAILABLE in the fixture, and the fixtures never ran the PDF metadata/revision checks or the
+    // field extractor: expected-but-absent analyzers count as UNAVAILABLE (B15). Coverage says so, the band does not move.
+    expect(summary.priority!.coverage).toBe(0.667);
+    expect(summary.priority!.incompleteCoverage).toBe(true);
+    expect(summary.priority!.missingAnalyzers).toEqual(expect.arrayContaining(["signature", "pdf.metadata", "pdf.revisions", "page.field_extractor"]));
     expect(summary.priority!.confidence).not.toBe(summary.priority!.coverage);
-    expect(summary.perDocumentPriority[mapping["D-02"]!]!.coverage).toBe(0.8);
+    expect(summary.perDocumentPriority[mapping["D-02"]!]!.coverage).toBe(0.667);
     expect(Object.keys(summary.perDocumentPriority).sort()).toEqual(Object.values(mapping).sort());
   });
 
@@ -95,10 +98,12 @@ describe("reasoning runs by itself when the last document finishes", () => {
     expect(record.events).toEqual(fixture.events);
     expect(record.findings.map((f) => ({ ...f, findingId: unspace(f.findingId) }))).toEqual(fixture.findings);
     expect(record.priority.perCase.contributingFindingIds.map(unspace)).toEqual(fixture.priority.perCase.contributingFindingIds);
-    expect({ ...record.priority.perCase, contributingFindingIds: [] }).toEqual({ ...fixture.priority.perCase, contributingFindingIds: [] });
+    // the recorded fixture predates expected-analyzer coverage (B15): compare everything except the coverage fields
+    const noCoverage = (p: object) => { const { coverage: _c, missingAnalyzers: _m, incompleteCoverage: _i, ...rest } = p as Record<string, unknown>; return rest; };
+    expect(noCoverage({ ...record.priority.perCase, contributingFindingIds: [] })).toEqual(noCoverage({ ...fixture.priority.perCase, contributingFindingIds: [] }));
   });
 
-  it("CASE-002 (similar names, different people): no findings, two entities kept apart, coverage 1", async () => {
+  it("CASE-002 (similar names, different people): no findings, two entities kept apart, coverage reported honestly", async () => {
     const t = await testApp();
     const agent = await twoCases(t);
     const mapping = await uploadFixtureDocs(t.deps, agent, "CASE-002", ["D-11.png", "D-12.png", "D-13.png"]);
@@ -106,7 +111,9 @@ describe("reasoning runs by itself when the last document finishes", () => {
     expect(record.findings).toEqual([]);
     expect((await checkExpectations("CASE-002", mapping, record.findings, record.events)).problems).toEqual([]);
     expect(record.entities.map((e) => e.role)).toEqual(["applicant", "guarantor"]);
-    expect(record.priority.perCase).toMatchObject({ priorityBand: "low", score: 0, coverage: 1 });
+    expect(record.priority.perCase).toMatchObject({ priorityBand: "low", score: 0, coverage: 0.833 });
+    // images only: the pdf.* family is NOT_APPLICABLE, but the field extractor never ran on these fixtures
+    expect(record.priority.perCase.missingAnalyzers).toEqual(["page.field_extractor"]);
     const g = (await agent.get("/api/v1/cases/CASE-002/graph").expect(200)).body;
     expectMatchesContract("GraphResponse", g);
     expect(g).toEqual(remapIds(await fixtureJson("CASE-002.graph.json"), mapping));
@@ -175,7 +182,7 @@ describe("a failed or partial analysis is never read as clean", () => {
     // but the case is not reported as fully covered
     expect(record.priority.perCase.coverage).toBeLessThan(1);
     expect(record.priority.perDocument[failedDoc!]).toMatchObject({ coverage: 0 });
-    expect(record.priority.perDocument[idDoc!]!.coverage).toBe(1);
+    expect(record.priority.perDocument[idDoc!]!.coverage).toBe(0.833); // not 1: the field extractor is expected but absent from the fixture
     void formDoc;
   });
 
@@ -189,8 +196,8 @@ describe("a failed or partial analysis is never read as clean", () => {
     expect(record.priority.perCase.priorityBand).toBe(fixture.priority.perCase.priorityBand);
     expect(record.priority.perCase.score).toBe(fixture.priority.perCase.score);
     expect(record.priority.perCase.coverage).toBeLessThan(1);
-    expect(record.priority.perDocument[mapping["D-02"]!]!.coverage).toBe(0.8);
-    expect(record.priority.perDocument[mapping["D-01"]!]!.coverage).toBe(1);
+    expect(record.priority.perDocument[mapping["D-02"]!]!.coverage).toBe(0.667);
+    expect(record.priority.perDocument[mapping["D-01"]!]!.coverage).toBe(0.833);
   });
 
   it("if the engine throws nothing is stored, the worker keeps going and the case has no priority", async () => {
