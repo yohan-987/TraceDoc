@@ -340,6 +340,50 @@ checked for format only; the `total` field takes the first amount on its row (lo
 account-number formats are generic placeholders (made-up formats), to be tightened once the real sample formats are known;
 text-layer words are not used (source is always `ocr`).
 
+## Image forensics (batch O8)
+
+Three analyzers share one page loader (`app/analyzers/image_forensics.py`, algorithms in `app/image_forensics.py`).
+They report observations about pixels, never verdicts. Thresholds live in `config/image_forensics.json`
+(override with `IMAGE_FORENSICS_CONFIG`) and every value is echoed into each signal's provenance as `cfg.<name>`.
+
+| Analyzer | Signal type | What it observes |
+|---|---|---|
+| `image.copymove` | `COPY_MOVE` (one signal, two regions, labelled "matching region A/B") | Two places holding the same ink pixels. ORB self-matches vote for an offset; each candidate is then confirmed by comparing pixels. |
+| `image.noise` | `NOISE_INCONSISTENCY` | Paper-only blocks much quieter than the rest of the page (typical of a flat fill or erased area). |
+| `image.ela` | `ELA_ANOMALY` (confidence capped at 0.4) | JPEG re-save residual that is unusual for the edge detail of a block. JPEG, unrotated originals only. |
+
+Applies to image originals and to scanned PDF pages (a page with no text-layer words). A digital PDF page is
+`NOT_APPLICABLE`. A test that cannot run (a clean digital image has no scan noise to measure, a PNG has no JPEG
+history) is reported `NOT_APPLICABLE` with the reason; it is never reported as a clean result.
+
+Copy-move ignores: tiny matches, repeated words inside a line that otherwise differs (a merchant name on two
+rows), shifted copies that overlap themselves, and regular patterns (three or more equal copies, such as ruled
+lines or identical rows). It reports a duplicated text line only when nearly all of the line's ink is duplicated
+(`cmMinCoverage`, 0.95).
+
+### Measured on the D2 samples (25 images: 4 image tampers, 21 genuine or recompressed)
+
+| Sample | Result |
+|---|---|
+| T-04 pasted statement row | found (`image.copymove`, both ends of the copy reported) |
+| T-05 replaced signature | found (`image.noise`, quieter area over the signature box, IoU about 0.6) |
+| T-03 retyped digits | **not detected** |
+| T-06 swapped photo (PNG) | **not detected** |
+| All genuine, scan, "hard" and recompressed controls | no signal from any of the three |
+
+Known limits, stated plainly:
+- **ELA found nothing on any D2 edit.** Every sample is saved once after editing, so edited and unedited areas share
+  one compression history; the threshold is set high (`elaZThreshold` 25) because large heading text on clean
+  statements scores up to about 15. Treat ELA as supporting evidence only.
+- A pasted piece that is only part of a line (a single amount cell) is not found by `image.copymove`: it needs
+  nearly the whole line duplicated. Small pastes are ignored by design.
+- The noise test needs a scanned or photographed page; on a clean digital image it does not run.
+- Thresholds were chosen on these 25 synthetic samples; they are not validated on real-world documents.
+- Analysis runs on the canonical render, downscaled to `maxWorkingSidePx` (2600) if larger; boxes are fractions.
+
+Tests: `tests/test_image_forensics.py` (synthetic pages) and `tests/test_image_forensics_samples.py` (the samples
+above; the two undetected edits are `xfail`, deliberately not tuned to pass).
+
 ## D1 accuracy evaluation (real pipeline)
 
 `tools/d1_accuracy_report.py` runs the **production pipeline** (`render_document` -> OCR -> `page.classifier` ->
