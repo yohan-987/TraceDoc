@@ -340,6 +340,40 @@ checked for format only; the `total` field takes the first amount on its row (lo
 account-number formats are generic placeholders (made-up formats), to be tightened once the real sample formats are known;
 text-layer words are not used (source is always `ocr`).
 
+## D1 accuracy evaluation (real pipeline)
+
+`tools/d1_accuracy_report.py` runs the **production pipeline** (`render_document` -> OCR -> `page.classifier` ->
+`page.field_extractor`, the same steps as `POST /analyze`) on the real D1 source files listed in `../samples/manifest.json` and
+compares the extracted fields with the manifest's expected values. It is separate from the C1 report above: the C1 OCR fixtures
+(D-01, D-02, D-03) are not D1 documents and are never used here (and `tools/accuracy_report.py` now refuses a D1 manifest).
+
+```powershell
+cd ocr-service
+python tools/d1_accuracy_report.py                       # default manifest: ..\samples\manifest.json
+python tools/d1_accuracy_report.py --manifest ..\samples\manifest.json --dpi 150 --timeout 120 --json d1-report.json
+```
+
+* Manifest: `{"files": [{"doc_id", "doc_type", "variant", "path", "page", "fields": [{"name", "value", "bbox"}]}]}`. `path` is resolved
+  against the manifest's folder, then its parent; `..` and absolute paths are rejected. The manifest and sample files are only read
+  (each file is copied into a temporary evidence folder).
+* Digital and scan entries share a `doc_id`, so each file gets a unique runtime id (`<doc_id>__<variant>`); nothing is overwritten.
+  Repeated field names (e.g. several `txn_amount`) are kept and matched **one-to-one**: exact values are paired first, left-overs
+  are paired in reading order as mismatches, and an extracted field is never used twice. Matching is by field name **and page**.
+* A value matches when the expected string equals the extracted `normalizedValue` or `rawValue` exactly (surrounding spaces
+  ignored, no case folding); the report says which one matched.
+* Result per expected field: `MATCH`, `MISMATCH` (a value was found but differs), `MISSING` (supported field, nothing extracted),
+  `NOT EVALUATED` (the O4 schema has no such field; it is **not** an extraction failure and fields are **never renamed** to fit),
+  `FAILED` (the sample's render/OCR/analyzers failed: `ERROR` / `UNAVAILABLE`, nothing compared). Extracted fields nobody
+  expected are `UNEXPECTED` and listed separately.
+* Bounding-box IoU (expected `[x, y, w, h]` vs the extracted `region.bbox`) is informational and never part of value accuracy.
+  A manifest box that is not a normalized `[x, y, w, h]` is flagged and skipped.
+* The summary is given for digital, scan and overall with the denominators: samples ok, expected, evaluated (= matched + mismatched +
+  missing), matched, mismatched, missing, not evaluated, failed, unexpected, "accuracy of evaluated" and "accuracy of all expected".
+  Whenever fields are not evaluated or failed, the report prints `COVERAGE IS INCOMPLETE`.
+* Exit code: 0 every expected field matched; 1 some mismatch / missing / not-evaluated field; 2 manifest missing or unusable (nothing
+  run); 3 at least one sample failed. `OCR_ENGINE` / `TESSERACT_CMD` apply as for the service; the first PaddleOCR use is slow, so
+  raise `--timeout` if a sample reports a timeout.
+
 ## Input limits and hardening
 
 | Setting | Default | Meaning |

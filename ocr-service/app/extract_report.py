@@ -85,6 +85,19 @@ def _expected(raw: Any) -> Optional[Expected]:
     return None
 
 
+def is_d1_manifest(path: Path) -> bool:
+    """True for the D1 manifest shape: a top-level 'files' or 'documents' list whose entries have 'doc_id' and 'variant'."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    # the D1 manifest lists its entries under "files" (older shape) or "documents" (current shape)
+    entries = next((data[k] for k in ("files", "documents") if isinstance(data.get(k), list)), None)
+    return entries is not None and any(isinstance(e, dict) and "doc_id" in e and "variant" in e for e in entries)
+
+
 def load_manifest(path: Path) -> Manifest:
     manifest = Manifest()
     try:
@@ -249,6 +262,10 @@ def accuracy_from_manifest(manifest_path: Optional[Path], fixtures_directory: Op
     blockers: List[str] = []
     if manifest_path is None:
         return None, ["samples/manifest.json was not found (set SAMPLES_MANIFEST): no expected values, nothing compared"]
+    if is_d1_manifest(manifest_path):
+        return None, ["this is the D1 manifest (doc_id / variant / files entries). The C1 report compares recorded C1 OCR fixtures "
+                      "(D-01, D-02, D-03), which are NOT D1 documents, so nothing was compared. "
+                      "Use: python tools/d1_accuracy_report.py"]
     manifest = load_manifest(manifest_path)
     blockers += manifest.problems
     for doc_id, doc in sorted(manifest.docs.items()):
