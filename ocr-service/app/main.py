@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from .config import Settings
+from .classify import apply_page_classifications
 from .context import AnalysisContext
 from .models import AnalyzeRequest, AnalyzeResponse, InvalidDocIdError
 from .registry import AnalyzerRegistry, default_registry, discover_analyzers, run_analyzers
@@ -63,7 +64,7 @@ def create_app(settings: Optional[Settings] = None, registry: Optional[AnalyzerR
         response = AnalyzeResponse(
             docId=document.doc_id,
             pipelineVersion=cfg.pipeline_version,
-            pages=[p.record for p in document.pages],
+            pages=apply_page_classifications(ctx, [p.record for p in document.pages]),
             fields=outcome.fields,
             signals=outcome.signals,
             analyzerStatuses=outcome.statuses,

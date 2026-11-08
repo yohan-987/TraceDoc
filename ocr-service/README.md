@@ -213,6 +213,59 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 PaddleOCR / PaddlePaddle are Apache-2.0. PyMuPDF (used for rendering and the text layer) remains **AGPL-3.0**, see above.
 
+## Page classifier (batch O3)
+
+The `page.classifier` analyzer (`app/analyzers/page_classifier.py`, scoring in `app/classify.py`, vocabulary in
+`app/classifier_lexicon.py`, thresholds in **`config/classifier.json`**) assigns every page exactly one `docType`:
+`id_card`, `application_form`, `bank_statement`, `other`, `UNKNOWN` or `AMBIGUOUS`, plus `docTypeConfidence` in 0..1.
+Pages are classified independently, so one PDF can contain different types. No LLM, no external call, no new dependency.
+
+### Algorithm (deterministic and explainable)
+
+1. **Keyword points** per class from OCR text: each matching lexicon rule adds its weight (title phrases such as
+   "account statement" weigh most), repeats add a small bonus, and having many *different* keywords adds a combination bonus.
+2. **Layout cues** add points only to a class that already has `cueGateRaw` keyword points (layout alone never creates a type):
+   card-like aspect ratio and few lines (id_card); portrait pages and many `Label:` lines (application_form); portrait,
+   date+amount **transaction rows**, a table header row and right-aligned amounts (bank_statement).
+3. `score = 1 - exp(-points / scoreScale)` per class (0..1).
+4. **Decision:** fewer than `minWords` words, or fewer than `minDistinctKeywords` distinct keywords in the best class, or best
+   score `< minScore` -> `UNKNOWN`; best minus second `< ambiguityMargin` -> `AMBIGUOUS`; otherwise the best class.
+5. **Confidence** = best score - `confidenceSeparationPenalty` x second score (clamped). For `UNKNOWN` it is the strength of the
+   best, insufficient evidence and never exceeds `minScore`; a blank page is 0.0. Confidence is how closely the page resembles
+   the label. It is unrelated to severity and says nothing about authenticity.
+
+Blank pages and random text have no keywords, so they come out `UNKNOWN`, not forced into a type.
+
+### Configuration (`config/classifier.json`, override the path with `CLASSIFIER_CONFIG`)
+
+All values are required (no defaults in code) and validated on load. Main ones: `minScore` 0.45, `ambiguityMargin` 0.10,
+`minWords` 6, `minDistinctKeywords` 2, `scoreScale` 6.0, `confidenceSeparationPenalty` 0.5, plus the layout-cue weights
+(`transactionRowsMin` 3, `idCardAspectMin/Max` 1.3/1.8, ...). A missing or invalid file makes the analyzer report `ERROR`
+(never a crash).
+
+### Integration and provenance
+
+* OCR is read through the shared context: OCR already cached by the `ocr` analyzer (or seeded recorded fixtures, see
+  `app/ocr_fixtures.py`) is used first; otherwise `get_page_ocr` runs live OCR once. The classifier never OCRs a page twice.
+* Results are stored in `ctx` (`classification_store(ctx)`, readable by later analyzers) and `/analyze` fills each
+  `PageRecord.docType` / `docTypeConfidence` from them. Without the classifier, pages stay `UNKNOWN` with confidence 0.0.
+* Status: `UNAVAILABLE` if no OCR is available for any page; `ERROR` if some pages failed (the others stay classified);
+  otherwise `AVAILABLE` (even when every page is `UNKNOWN`).
+* Provenance `config` echoes **every threshold** as `cfg.<name>` and per page `page<N>.docType`, `.confidence`, `.scores`,
+  `.evidence` (the points that decided it) and `.note` (why `UNKNOWN` / `AMBIGUOUS`).
+
+### Recorded OCR fixtures
+
+`app/ocr_fixtures.py` reads `contracts/fixtures/ocr/<docId>-page-N.json` (override: `OCR_FIXTURES_DIR`), read-only.
+`tests/test_classifier_fixtures.py` classifies them when the folder exists (D-01 -> id_card, D-02 -> application_form,
+D-03 -> bank_statement) and is skipped otherwise.
+
+### Limits
+
+Heuristic and English-only: a page whose wording is not in the lexicon is `UNKNOWN`, and a page that mixes two document types
+can be `AMBIGUOUS`. `other` is recognised only from its own vocabulary (invoice, letter, certificate, ...). The lexicon is
+fictional-document vocabulary and has not been tuned on real scans. Analysts can correct any type in the UI.
+
 ## Input limits and hardening
 
 | Setting | Default | Meaning |
