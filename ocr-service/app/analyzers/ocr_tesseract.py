@@ -1,4 +1,4 @@
-"""Tesseract OCR analyzer (registered as "ocr").
+"""OCR analyzer (registered as "ocr"): PaddleOCR first, Tesseract fallback (see app/ocr.py).
 
 It produces no fields or signals: its output is the per-page OcrPage stored in the analysis context
 (see app/ocr.py) for later analyzers. Its own response contribution is a status plus provenance.
@@ -9,8 +9,8 @@ import time
 
 from ..context import AnalysisContext
 from ..models import AnalyzerResult
-from ..ocr import OcrPageError, OcrUnavailableError, get_engine, get_page_ocr
-from ..ocr_core import page_timeout_s
+from ..ocr import OcrPageError, OcrUnavailableError, get_page_ocr, ocr_availability
+from ..ocr_core import configured_lang, page_timeout_s
 from ..registry import Analyzer, register_analyzer
 
 _BUDGET_FRACTION = 0.9  # stop slightly before the registry's own timeout so no work is left running
@@ -22,13 +22,14 @@ class TesseractOcrAnalyzer(Analyzer):
     version = "0.1"
 
     def run(self, ctx: AnalysisContext) -> AnalyzerResult:
-        engine = get_engine(ctx)
-        if not engine.available:
-            return AnalyzerResult.unavailable(engine.reason or "Tesseract unavailable")
+        available, why = ocr_availability(ctx)
+        if not available:
+            return AnalyzerResult.unavailable(why or "no OCR engine available")
 
         deadline = time.monotonic() + ctx.settings.analyzer_timeout_s * _BUDGET_FRACTION
         failed: dict[int, str] = {}
         word_count = line_count = ok_pages = 0
+        used: dict[str, None] = {}  # ordered, de-duplicated 'engine version' labels
         for page in ctx.pages:
             remaining = deadline - time.monotonic()
             try:
@@ -41,12 +42,13 @@ class TesseractOcrAnalyzer(Analyzer):
                 failed[page.page] = str(exc)
                 continue
             ok_pages += 1
+            used[f"{result.engine} {result.engineVersion}"] = None
             word_count += len(result.words)
             line_count += len(result.lines)
 
-        config = {"lang": engine.lang, "pages": len(ctx.pages), "pagesOk": ok_pages,
+        config = {"lang": configured_lang(), "engines": ",".join(u.split(" ")[0] for u in used), "pages": len(ctx.pages), "pagesOk": ok_pages,
                   "words": word_count, "lines": line_count}
-        model_version = f"tesseract {engine.version}" if engine.version else None
+        model_version = "; ".join(used) or None
         if failed:
             config["pagesFailed"] = ",".join(str(n) for n in sorted(failed))
             reason = "; ".join(f"page {n}: {msg}" for n, msg in sorted(failed.items()))

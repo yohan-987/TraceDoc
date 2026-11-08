@@ -1,5 +1,6 @@
 """FastAPI application: GET /health and POST /analyze."""
 import logging
+import os
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
@@ -27,6 +28,13 @@ def create_app(settings: Optional[Settings] = None, registry: Optional[AnalyzerR
     app = FastAPI(title="TraceDocs analysis service", version=settings.pipeline_version)
     app.state.settings = settings
     app.state.registry = registry
+    if settings.debug_endpoints:  # explicit opt-in (DEBUG_ENDPOINTS=1); the route does not exist otherwise
+        from .debug import register_debug_routes
+        register_debug_routes(app)
+        logger.warning("DEBUG endpoints are enabled: development use only")
+    if os.environ.get("OCR_WARMUP", "").strip().lower() in ("1", "true", "yes", "on"):
+        from .ocr_paddle import start_warmup
+        start_warmup()
 
     @app.get("/health")
     def health() -> dict:

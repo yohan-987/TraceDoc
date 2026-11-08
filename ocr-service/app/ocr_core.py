@@ -52,6 +52,16 @@ def page_timeout_s() -> float:
     return value if 0 < value < 3600 else DEFAULT_PAGE_TIMEOUT_S  # also rejects NaN and inf
 
 
+def configured_lang() -> str:
+    return os.environ.get("OCR_LANG", DEFAULT_LANG).strip() or DEFAULT_LANG
+
+
+def engine_policy() -> str:
+    """OCR_ENGINE: "auto" (PaddleOCR first, Tesseract fallback), "tesseract" or "paddleocr" (no fallback)."""
+    value = os.environ.get("OCR_ENGINE", "auto").strip().lower()
+    return value if value in ("auto", "tesseract", "paddleocr") else "auto"
+
+
 def _is_file(path: str) -> bool:
     """Path.is_file(), but an over-long or malformed path (OSError / ValueError) is just 'not a file'."""
     try:
@@ -133,6 +143,28 @@ def _union(boxes: List[BBox]) -> BBox:
     return (x0, y0, min(1.0, x1) - x0, min(1.0, y1) - y0)
 
 
+def assemble_lines(groups: Dict[Any, List[Dict[str, Any]]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Ordered {line key: [word dicts with text/bbox/ocrConfidence]} -> (words, lines) in OcrWord/OcrLine
+    shape. Words get their lineIndex; a line's box is the union of its words and its confidence their mean."""
+    words: List[Dict[str, Any]] = []
+    lines: List[Dict[str, Any]] = []
+    for line_index, line_words in enumerate(groups.values()):
+        if not line_words:
+            continue
+        indices = []
+        for word in line_words:
+            word["lineIndex"] = len(lines)
+            indices.append(len(words))
+            words.append(word)
+        lines.append({
+            "text": " ".join(w["text"] for w in line_words),
+            "bbox": _union([w["bbox"] for w in line_words]),
+            "ocrConfidence": sum(w["ocrConfidence"] for w in line_words) / len(line_words),
+            "wordIndices": indices,
+        })
+    return words, lines
+
+
 def parse_tsv(data: Dict[str, List[Any]], width_px: int, height_px: int) -> Dict[str, Any]:
     """Turn pytesseract's image_to_data dict into words and lines (OcrWord / OcrLine shapes).
 
@@ -156,20 +188,7 @@ def parse_tsv(data: Dict[str, List[Any]], width_px: int, height_px: int) -> Dict
             continue
         groups.setdefault(key, []).append({"text": text, "bbox": box, "ocrConfidence": conf})
 
-    words: List[Dict[str, Any]] = []
-    lines: List[Dict[str, Any]] = []
-    for line_index, line_words in enumerate(groups.values()):
-        indices = []
-        for word in line_words:
-            word["lineIndex"] = line_index
-            indices.append(len(words))
-            words.append(word)
-        lines.append({
-            "text": " ".join(w["text"] for w in line_words),
-            "bbox": _union([w["bbox"] for w in line_words]),
-            "ocrConfidence": sum(w["ocrConfidence"] for w in line_words) / len(line_words),
-            "wordIndices": indices,
-        })
+    words, lines = assemble_lines(groups)
     return {"widthPx": width_px, "heightPx": height_px, "words": words, "lines": lines}
 
 

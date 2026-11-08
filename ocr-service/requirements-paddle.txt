@@ -1,0 +1,5 @@
+# Optional: PaddleOCR as the primary OCR engine (Apache-2.0). CPU build; large download (hundreds of MB).
+# Models are downloaded on first use. If these do not install for your Python version, ignore this file:
+# the service runs on Tesseract alone.
+paddlepaddle>=3.0
+paddleocr>=3.0

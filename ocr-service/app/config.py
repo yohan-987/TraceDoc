@@ -53,6 +53,7 @@ class Settings:
     max_image_pixels: int = 50_000_000  # per rendered page / input image; guards against memory bombs
     max_total_pixels: int = 400_000_000  # all pages of one document together; bounds time and disk use
     pipeline_version: str = PIPELINE_VERSION
+    debug_endpoints: bool = False  # development only; see app/debug.py
 
     @property
     def evidence_dir(self) -> Path:
@@ -82,5 +83,7 @@ class Settings:
             raise ValueError("MAX_IMAGE_PIXELS must be >= 1")
         if max_total < max_pixels:
             raise ValueError("MAX_TOTAL_PIXELS must be >= MAX_IMAGE_PIXELS")
+        debug = os.environ.get("DEBUG_ENDPOINTS", "").strip().lower() in ("1", "true", "yes", "on")
         return cls(data_dir=data_dir, render_dpi=dpi, analyzer_timeout_s=timeout, max_pages=max_pages,
-                   max_image_pixels=max_pixels, max_total_pixels=max_total)
+                   max_image_pixels=max_pixels, max_total_pixels=max_total,
+                   debug_endpoints=debug)

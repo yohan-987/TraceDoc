@@ -140,9 +140,63 @@ always run. `tests/test_ocr_real.py` calls the real Tesseract and is skipped aut
 
 ### Limitations
 
-English only; no PaddleOCR; no PDF text-layer words (`pdf_text_layer`) and no `/debug/ocr` endpoint (both
-mentioned in BUILD_PLAN for O2, left out here by instruction). Pages are OCRed sequentially, there is no
-preprocessing (deskew, binarization), and Tesseract confidence is an engine estimate, not accuracy.
+English only; no preprocessing (deskew, binarization); pages are OCRed sequentially; confidence is an
+engine estimate, not accuracy. See the PaddleOCR and text-layer notes below for their own limits.
+
+## OCR engines: PaddleOCR primary, Tesseract fallback (batch O2, part 2)
+
+`OCR_ENGINE` selects the policy: `auto` (default) tries **PaddleOCR first** and uses **Tesseract** when PaddleOCR
+is not installed, cannot initialise, or fails on a page; `tesseract` never loads PaddleOCR; `paddleocr` forbids
+the fallback (a failure then shows as `UNAVAILABLE` / `ERROR`). `OcrPage.engine` / `engineVersion` record which
+engine produced each page, and the analyzer's provenance lists them (`config.engines`, `modelVersion`).
+
+* PaddleOCR is created **once per process** and reused for every page and request (inference is serialized).
+  The first use loads (and, on first ever use, downloads) models, which can exceed `ANALYZER_TIMEOUT_S`. Either
+  send one warm-up request, raise the timeout for it, or set `OCR_WARMUP=1` to initialise in the background at startup.
+* If PaddleOCR fails on a page, it is skipped for the rest of that request and Tesseract handles the remaining pages.
+* Install (optional, heavy): `python -m pip install -r requirements-paddle.txt`. Whether PaddlePaddle ships wheels
+  for your Python version/Windows is outside this service; if the install fails the service runs on Tesseract.
+* **PaddleOCR returns text lines, not words.** Word boxes are estimated by splitting each line on whitespace and
+  sharing the line box by character count; every word gets its line's score. Treat Paddle word boxes as approximate.
+  Supports the PaddleOCR 3.x (`predict`) and 2.x (`ocr`) APIs. `PADDLE_LANG` (default `en`).
+* An unreadable page image is reported as a page error; it is not retried with the other engine.
+
+## PDF text layer (`source = pdf_text_layer`)
+
+`app/textlayer.py` reads the embedded text of digital PDFs with PyMuPDF (`get_text("words")`, page rotation applied),
+normalizes boxes `[x, y, w, h]` (0..1) against the canonical render, and caches the whole document in `ctx` once per
+request. Use `get_text_layer_page(ctx, page)` (returns `TextLayerPage(source="pdf_text_layer", page=OcrPage)`).
+
+* It is **never merged into or substituted for OCR**; `get_page_ocr` and `get_text_layer_page` are separate and the
+  source is explicit. The shared `OcrPage`/`OcrWord` models have no `source` field, so the source lives on the wrapper
+  and in `page.engine == "pymupdf-text-layer"`.
+* Text-layer words have no recognition confidence; `ocrConfidence` is **1.0**, meaning only "exactly the text encoded
+  in the PDF". It does not mean the visible page shows that text (hidden or overlaid text is possible).
+* The `pdf.text_layer_words` analyzer reports status/provenance only: `NOT_APPLICABLE` for images, `AVAILABLE` with
+  `reason: "PDF has no text layer"` for scans (which says nothing about authenticity).
+
+## Debug endpoint (development only)
+
+`GET /debug/ocr/{docId}/{page}[?source=ocr|pdf_text_layer]` returns the canonical page PNG with boxes drawn
+(blue = line; words green / orange / red by confidence >= 0.8 / 0.5-0.8 / < 0.5; magenta = text-layer words).
+Pages are 1-based. It exists **only** when `DEBUG_ENDPOINTS=1` (default off; otherwise the route is absent and
+returns 404). Errors: 422 invalid docId/page/source, 404 unknown document, page or text layer, 503 no OCR engine,
+502 OCR failed on the page. It takes no paths and only serves renders of the given document. It is unauthenticated:
+keep the service bound to `127.0.0.1` and never enable it in production.
+
+```powershell
+$env:DEBUG_ENDPOINTS = "1"
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+# then open http://127.0.0.1:8000/debug/ocr/CASE-001-DOC-01/1 in a browser
+```
+
+## Settings added in this batch
+
+`OCR_ENGINE` (`auto`), `PADDLE_LANG` (`en`), `OCR_WARMUP` (off), `DEBUG_ENDPOINTS` (off). See `.env.example`.
+
+## Licensing addendum
+
+PaddleOCR / PaddlePaddle are Apache-2.0. PyMuPDF (used for rendering and the text layer) remains **AGPL-3.0**, see above.
 
 ## Input limits and hardening
 

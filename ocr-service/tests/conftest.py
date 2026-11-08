@@ -62,3 +62,14 @@ def make_client(settings):
 @pytest.fixture
 def client(make_client, empty_registry):
     return make_client(empty_registry)
+
+
+@pytest.fixture(autouse=True)
+def _default_ocr_engine(monkeypatch):
+    """Tests use Tesseract unless they opt in to PaddleOCR, so a locally installed PaddleOCR never
+    changes the results of tests that mock or expect Tesseract."""
+    from app import ocr_paddle
+    monkeypatch.setenv("OCR_ENGINE", "tesseract")
+    ocr_paddle.reset_paddle()
+    yield
+    ocr_paddle.reset_paddle()
