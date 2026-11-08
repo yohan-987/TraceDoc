@@ -52,6 +52,14 @@ def paddle_lang() -> str:
     return os.environ.get("PADDLE_LANG", "en").strip() or "en"
 
 
+def mkldnn_enabled() -> bool:
+    """oneDNN (MKL-DNN) acceleration. OFF by default: PaddlePaddle 3.3.x has an oneDNN/PIR regression on
+    x86-64 CPUs that makes inference raise "ConvertPirAttribute2RuntimeAttribute not support
+    [pir::ArrayAttribute<pir::DoubleAttribute>]" (PaddlePaddle/Paddle#77340, PaddlePaddle/PaddleOCR#18162).
+    ``enable_mkldnn=False`` avoids that code path. Set PADDLE_ENABLE_MKLDNN=1 to turn it back on."""
+    return os.environ.get("PADDLE_ENABLE_MKLDNN", "0").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _create_engine() -> Tuple[Any, str]:
     try:
         import paddleocr  # heavy import, only when actually needed
@@ -59,12 +67,14 @@ def _create_engine() -> Tuple[Any, str]:
         raise PaddleUnavailable("PaddleOCR is not installed (see requirements-paddle.txt)") from exc
     version = str(getattr(paddleocr, "__version__", "unknown"))
     lang = paddle_lang()
+    mkldnn = mkldnn_enabled()
     try:  # PaddleOCR 3.x arguments
         engine = paddleocr.PaddleOCR(lang=lang, use_doc_orientation_classify=False,
-                                     use_doc_unwarping=False, use_textline_orientation=False)
+                                     use_doc_unwarping=False, use_textline_orientation=False,
+                                     enable_mkldnn=mkldnn)
     except Exception:  # noqa: BLE001 - 2.x does not know those arguments
         try:
-            engine = paddleocr.PaddleOCR(lang=lang, use_angle_cls=False, show_log=False)
+            engine = paddleocr.PaddleOCR(lang=lang, use_angle_cls=False, show_log=False, enable_mkldnn=mkldnn)
         except Exception as exc:  # noqa: BLE001
             raise PaddleUnavailable(f"PaddleOCR could not be initialised ({type(exc).__name__}: {exc})"[:300]) from exc
     return engine, version
@@ -78,7 +88,7 @@ def get_paddle() -> Tuple[Optional[Any], PaddleStatus]:
             try:
                 engine, version = _create_engine()
                 _state = (engine, PaddleStatus(True, version=version))
-                logger.info("PaddleOCR %s initialised (lang=%s)", version, paddle_lang())
+                logger.info("PaddleOCR %s initialised (lang=%s, oneDNN=%s)", version, paddle_lang(), mkldnn_enabled())
             except PaddleUnavailable as exc:
                 _state = (None, PaddleStatus(False, reason=str(exc)))
                 logger.warning("PaddleOCR unavailable: %s", exc)
@@ -227,7 +237,11 @@ def ocr_image_file(path: Path) -> Dict[str, Any]:
             else:
                 results = list(engine.ocr(str(path), cls=False))
     except Exception as exc:  # noqa: BLE001
-        raise PaddleFailure(f"PaddleOCR failed ({type(exc).__name__}: {exc})"[:300]) from exc
+        hint = ""
+        if "ConvertPirAttribute2RuntimeAttribute" in str(exc):
+            hint = (" [oneDNN/PIR bug in PaddlePaddle 3.3.x; PADDLE_ENABLE_MKLDNN must be 0]" if mkldnn_enabled()
+                    else " [oneDNN/PIR error although oneDNN is disabled here: see README Troubleshooting]")
+        raise PaddleFailure(f"PaddleOCR failed ({type(exc).__name__}: {exc}){hint}"[:400]) from exc
     try:
         return parse_paddle_result(results, width, height)
     except Exception as exc:  # noqa: BLE001

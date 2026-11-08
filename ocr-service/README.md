@@ -161,6 +161,21 @@ engine produced each page, and the analyzer's provenance lists them (`config.eng
   Supports the PaddleOCR 3.x (`predict`) and 2.x (`ocr`) APIs. `PADDLE_LANG` (default `en`).
 * An unreadable page image is reported as a page error; it is not retried with the other engine.
 
+### PaddleOCR troubleshooting
+
+* **`NotImplementedError: ConvertPirAttribute2RuntimeAttribute not support [pir::ArrayAttribute<pir::DoubleAttribute>]`**
+  is raised during inference, not at start-up, so PaddleOCR "initialises" fine and then fails. It is a oneDNN / PIR
+  regression in PaddlePaddle 3.3.x on x86-64 CPUs (PaddlePaddle/Paddle#77340, PaddlePaddle/PaddleOCR#18162). The
+  service therefore constructs PaddleOCR with `enable_mkldnn=False` (`PADDLE_ENABLE_MKLDNN=0`, the default). Setting
+  `PADDLE_ENABLE_MKLDNN=1` brings the error back on affected versions. Reported alternative: pin `paddlepaddle==3.2.2`
+  (not confirmed here to have a Python 3.13 Windows wheel).
+* Pinned for this project in `requirements-paddle.txt`: `paddlepaddle==3.3.1`, `paddleocr>=3.7,<3.8` (PaddleX is
+  pulled in by PaddleOCR). Python 3.13 / Windows x86-64 has a PaddlePaddle 3.3.1 wheel.
+* Models cached under the user profile: if your Windows user folder contains non-ASCII characters and PaddleOCR cannot
+  read its models (parse errors), point `PADDLE_PDX_CACHE_HOME` at an ASCII-only path.
+* Run `python tools/paddle_check.py` for the installed versions plus a real inference on the three sample documents
+  (oneDNN off vs on). A failure never crashes `/analyze`: the page is OCRed by Tesseract unless `OCR_ENGINE=paddleocr`.
+
 ## PDF text layer (`source = pdf_text_layer`)
 
 `app/textlayer.py` reads the embedded text of digital PDFs with PyMuPDF (`get_text("words")`, page rotation applied),
@@ -192,7 +207,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 ## Settings added in this batch
 
-`OCR_ENGINE` (`auto`), `PADDLE_LANG` (`en`), `OCR_WARMUP` (off), `DEBUG_ENDPOINTS` (off). See `.env.example`.
+`OCR_ENGINE` (`auto`), `PADDLE_LANG` (`en`), `PADDLE_ENABLE_MKLDNN` (`0`), `OCR_WARMUP` (off), `DEBUG_ENDPOINTS` (off). See `.env.example`.
 
 ## Licensing addendum
 

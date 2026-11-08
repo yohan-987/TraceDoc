@@ -1,5 +1,10 @@
 # Optional: PaddleOCR as the primary OCR engine (Apache-2.0). CPU build; large download (hundreds of MB).
 # Models are downloaded on first use. If these do not install for your Python version, ignore this file:
 # the service runs on Tesseract alone.
-paddlepaddle>=3.0
-paddleocr>=3.0
+#
+# Versions: paddlepaddle 3.3.1 publishes a CPython 3.13 / Windows x86-64 wheel (PyPI). PaddleOCR 3.7.x + PaddlePaddle
+# 3.3.1 is the combination reported to work with oneDNN disabled (this service disables it, see app/ocr_paddle.py);
+# the oneDNN regression itself is in PaddlePaddle 3.3.x (PaddlePaddle/Paddle#77340, PaddleOCR#18162).
+# Verify your install with:  python tools/paddle_check.py
+paddlepaddle==3.3.1
+paddleocr>=3.7,<3.8
