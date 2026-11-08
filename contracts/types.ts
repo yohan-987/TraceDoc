@@ -60,7 +60,7 @@ export interface DocumentRecord {
 }
 
 export interface ExtractedField {
-  fieldId: string;
+  fieldId: string; // unique within its document: (docId, fieldId) identifies a field (the Python service numbers FLD-001... per document)
   docId: string;
   name: string; // "full_name", "dob", "address", ...
   rawValue: string; // exactly as read
@@ -158,7 +158,7 @@ export interface InvestigationEvent {
  * `detector` is the analyzer id (e.g. "image.ela"); the engine maps detectors to families via config.
  */
 export interface ForensicSignal {
-  signalId: string;
+  signalId: string; // unique within its document, like fieldId
   detector: string;
   type: string;
   regions: Region[];

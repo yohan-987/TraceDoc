@@ -75,12 +75,12 @@ export function categoryOfDetectors(detectors: readonly string[], config: EventG
 
 export function groupEvents(documents: readonly DocumentSignals[], caseId: string, options: GroupOptions = {}): RegionEvent[] {
   const cfg = options.config ?? DEFAULT_EVENT_CONFIG;
-  const seen = new Set<string>();
   const events: RegionEvent[] = [];
   for (const doc of documents) {
+    const seen = new Set<string>(); // signal ids only have to be unique within their document
     const sigs = doc.signals;
     for (const s of sigs) {
-      if (seen.has(s.signalId)) throw new Error(`groupEvents: duplicate signalId ${s.signalId}`);
+      if (seen.has(s.signalId)) throw new Error(`groupEvents: duplicate signalId ${s.signalId} in document ${doc.docId}`);
       seen.add(s.signalId);
     }
     const parent = sigs.map((_, i) => i);

@@ -43,7 +43,7 @@ different id_numbers. They stay two RESOLVED entities; there are no findings at 
 and `guarantor_full_name`, `guarantor_id_number`. A `guarantor_` prefix means the field is about the guarantor: strip it for
 `semanticType`, and the provisional `entityRole` is `guarantor`.
 
-**IDs.** `fieldId = <docId>-F<nn>`, `assertionId = <docId>-A<nn>` (same `nn` as the field), signals `<docId>-S<nn>`, entities `E-001...`
+**IDs.** Field and signal ids only have to be unique within their document (the Python service numbers `FLD-001`, `SIG-001` per document); the engine derives case-unique assertion ids (`<docId>-A<nn>` when the field id is `<docId>-F<nn>`, else `A-<docId>-<fieldId>`). The fixtures use the document-prefixed form: `fieldId = <docId>-F<nn>`, `assertionId = <docId>-A<nn>` (same `nn` as the field), signals `<docId>-S<nn>`, entities `E-001...`
 numbered by first assertion in input order, findings `F-0001...` (rule findings in rule-table order, then events), evidence `E-0001...`,
 events `EV-001...`. Tests should match findings by `type` plus evidence assertion ids, not by finding id.
 

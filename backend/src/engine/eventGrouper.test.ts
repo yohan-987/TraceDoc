@@ -173,3 +173,11 @@ describe("contract of the function", () => {
     assert.deepEqual([...ids].sort(), sigs.map((s) => s.signalId).sort());
   });
 });
+
+describe("signal ids are unique per document", () => {
+  it("the same signal id in two documents is fine (a per-document numbering such as SIG-001)", () => {
+    const x = { docId: "D1", signals: [sig("image.ela", [A], 0.5, 1, "SIG-001")] }, y = { docId: "D2", signals: [sig("image.noise", [A], 0.5, 1, "SIG-001")] };
+    const ev = groupEvents([x, y], "C");
+    assert.deepEqual(ev.map((e) => [e.docId, e.signalIds]), [["D1", ["SIG-001"]], ["D2", ["SIG-001"]]]);
+  });
+});

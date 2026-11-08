@@ -205,3 +205,24 @@ describe("edge cases", () => {
     assert.deepEqual(out.map((a) => [a.docId, a.documentDate]), [["A", "2020-01-01"], ["B", "2021-02-02"]]);
   });
 });
+
+describe("ids are unique per document, as the Python service numbers them", () => {
+  const f = (docId: string, fieldId: string, name: string, raw: string) => field({ docId, fieldId, name, rawValue: raw, region: { docId, page: 1, bbox: [0.1, 0.1, 0.2, 0.05] } });
+  it("the same field id in two documents gives two different assertion ids (the real service emits FLD-001 in every document)", () => {
+    const out = buildAssertions([f("D-1", "FLD-001", "dob", "01/02/2000"), f("D-2", "FLD-001", "dob", "01/02/2000")], [page("id_card", "D-1"), page("application_form", "D-2")], "C");
+    assert.deepEqual(out.map((a) => a.assertionId), ["A-D-1-FLD-001", "A-D-2-FLD-001"]);
+    assert.deepEqual(out.map((a) => a.fieldId), ["FLD-001", "FLD-001"]);
+  });
+  it("the same field id twice in one document is still an error", () => {
+    assert.throws(() => buildAssertions([f("D-1", "FLD-001", "dob", "1"), f("D-1", "FLD-001", "full_name", "a b")], [], "C"), /duplicate fieldId FLD-001 in document D-1/);
+  });
+  it("fixture-style ids keep their short form, and a prefix of another document does not", () => {
+    assert.equal(assertionIdFor("D-01-F02", "D-01"), "D-01-A02");
+    assert.equal(assertionIdFor("D-01-F02", "D-02"), "A-D-02-D-01-F02");
+    assert.equal(assertionIdFor("D-01-F02"), "D-01-A02");
+    assert.equal(assertionIdFor("FLD-001", "D-7"), "A-D-7-FLD-001");
+  });
+  it("two fields that would collide on the assertion id are refused, never silently merged", () => {
+    assert.throws(() => buildAssertions([f("X-Y", "FLD-001", "dob", "1"), f("X", "Y-FLD-001", "dob", "1")], [], "C"), /same assertionId/);
+  });
+});

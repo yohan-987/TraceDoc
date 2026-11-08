@@ -199,9 +199,18 @@ function docLevelDates(docFields: Array<{ semanticType: string; field: Extracted
 }
 
 // ------------------------------------------------------------------------------------------ main
-/** fieldId "D-01-F02" -> assertionId "D-01-A02" (same number). Any other fieldId -> "A-<fieldId>". */
-export function assertionIdFor(fieldId: string): string {
-  return /-F\d+$/.test(fieldId) ? fieldId.replace(/-F(\d+)$/, "-A$1") : `A-${fieldId}`;
+/**
+ * assertionId for a field. Field ids only have to be unique within their document (the Python service numbers them per document:
+ * FLD-001, FLD-002, ...), so the assertion id adds the document when the field id does not already carry it:
+ *   fieldId "D-01-F02" in document D-01 -> "D-01-A02"      (the id convention of the fixtures)
+ *   fieldId "FLD-001"  in document D-7    -> "A-D-7-FLD-001"
+ * Without a docId (legacy call): "D-01-F02" -> "D-01-A02", anything else -> "A-<fieldId>".
+ */
+export function assertionIdFor(fieldId: string, docId?: string): string {
+  if (docId === undefined) return /-F\d+$/.test(fieldId) ? fieldId.replace(/-F(\d+)$/, "-A$1") : `A-${fieldId}`;
+  const prefix = `${docId}-F`;
+  const digits = fieldId.startsWith(prefix) ? fieldId.slice(prefix.length) : "";
+  return /^\d+$/.test(digits) ? `${docId}-A${digits}` : `A-${docId}-${fieldId}`;
 }
 
 export function buildAssertions(fields: readonly ExtractedField[], pages: readonly PageRecord[], caseId: string): DocumentAssertion[] {
@@ -211,8 +220,9 @@ export function buildAssertions(fields: readonly ExtractedField[], pages: readon
 
   const seen = new Set<string>();
   const classified = fields.map((field) => {
-    if (seen.has(field.fieldId)) throw new Error(`buildAssertions: duplicate fieldId ${field.fieldId}`);
-    seen.add(field.fieldId);
+    const key = `${field.docId}\u0000${field.fieldId}`; // (docId, fieldId) identifies a field
+    if (seen.has(key)) throw new Error(`buildAssertions: duplicate fieldId ${field.fieldId} in document ${field.docId}`);
+    seen.add(key);
     return { field, ...classifyFieldName(field.name) };
   });
 
@@ -221,12 +231,12 @@ export function buildAssertions(fields: readonly ExtractedField[], pages: readon
   const dates = new Map<string, ReturnType<typeof docLevelDates>>();
   for (const [docId, list] of byDoc) dates.set(docId, docLevelDates(list, firstPageType.get(docId)));
 
-  return classified.map(({ field, semanticType, prefixRole }) => {
+  const built = classified.map(({ field, semanticType, prefixRole }) => {
     const d = dates.get(field.docId)!;
     const docType = pageType.get(`${field.docId}#${field.region.page}`) ?? firstPageType.get(field.docId);
     const effectiveDate = d.effectiveDate ?? (EFFECTIVE_AT_STATEMENT_DATE.has(semanticType) ? d.statementDate : null);
     const a: DocumentAssertion = {
-      assertionId: assertionIdFor(field.fieldId),
+      assertionId: assertionIdFor(field.fieldId, field.docId),
       caseId,
       docId: field.docId,
       fieldId: field.fieldId,
@@ -241,4 +251,7 @@ export function buildAssertions(fields: readonly ExtractedField[], pages: readon
     if (effectiveDate) a.effectiveDate = effectiveDate;
     return a;
   });
+  const ids = new Set(built.map((a) => a.assertionId));
+  if (ids.size !== built.length) throw new Error("buildAssertions: two fields produced the same assertionId");
+  return built;
 }

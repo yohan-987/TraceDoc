@@ -52,10 +52,11 @@ export function runReasoning(input: ReasoningInput): ReasoningOutput {
     signals: d.signals.filter((s) => d.analyzerStatuses[s.detector] === undefined || d.analyzerStatuses[s.detector] === "AVAILABLE"),
   }));
   const events = groupEvents(usable, caseId, opts);
-  const signalById = new Map<string, ForensicSignal>(usable.flatMap((u) => u.signals.map((s) => [s.signalId, s] as const)));
+  // signal ids only have to be unique within their document
+  const signalOf = new Map<string, ForensicSignal>(usable.flatMap((u) => u.signals.map((s) => [`${u.docId}\u0000${s.signalId}`, s] as const)));
   const next = nextIdStart(ruleFindings);
   const eventFindings = events.map((ev, i) =>
-    eventToFinding(ev, ev.signalIds.flatMap((id) => signalById.get(id) ?? []), assertions.filter((a) => a.docId === ev.docId), {
+    eventToFinding(ev, ev.signalIds.flatMap((id) => signalOf.get(`${ev.docId}\u0000${id}`) ?? []), assertions.filter((a) => a.docId === ev.docId), {
       findingNumber: next.finding + i, evidenceNumber: next.evidence + i,
     }));
   const findings = [...ruleFindings, ...eventFindings];

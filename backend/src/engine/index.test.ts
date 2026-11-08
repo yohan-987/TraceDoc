@@ -221,3 +221,41 @@ describe("contract of the function", () => {
     }
   });
 });
+
+describe("per-document ids, as the real Python service emits them (regression: reasoning crashed on real output)", () => {
+  /** Relabels a fixture the way the service does: FLD-001... and SIG-001... numbered inside each document. */
+  const perDocumentIds = (docs: AnalyzeResponse[]): AnalyzeResponse[] =>
+    docs.map((d) => ({
+      ...d,
+      fields: d.fields.map((f, i) => ({ ...f, fieldId: `FLD-${String(i + 1).padStart(3, "0")}` })),
+      signals: d.signals.map((s, i) => ({ ...s, signalId: `SIG-${String(i + 1).padStart(3, "0")}` })),
+    }));
+  const project = (o: ReasoningOutput) => ({
+    findings: o.findings.map((f) => [f.type, f.category, f.severity, f.confidence, f.observationStatus]),
+    entities: o.entities.map((e) => [e.entityId, e.role, e.resolution, e.assertionIds.length]),
+    priority: o.priority.perCase, perDocument: o.priority.perDocument,
+  });
+  for (const caseId of Object.keys(CASES)) {
+    it(`${caseId}: gives the same findings, entities and priority as with fixture-style ids`, () => {
+      const real = runReasoning({ caseId, documents: perDocumentIds(load(caseId)) });
+      const fixture = run(caseId);
+      const stripPriorityIds = (p: any) => ({ ...p, contributingFindingIds: undefined });
+      assert.deepStrictEqual(project(real).findings, project(fixture).findings);
+      assert.deepStrictEqual(project(real).entities, project(fixture).entities);
+      assert.deepStrictEqual(stripPriorityIds(project(real).priority), stripPriorityIds(project(fixture).priority));
+    });
+    it(`${caseId}: assertion ids are unique and every evidence link points at a real assertion`, () => {
+      const out = runReasoning({ caseId, documents: perDocumentIds(load(caseId)) });
+      const ids = out.assertions.map((a) => a.assertionId);
+      assert.equal(new Set(ids).size, ids.length);
+      for (const f of out.findings) for (const e of f.evidence) for (const id of e.assertionIds ?? []) assert.ok(ids.includes(id), id);
+    });
+  }
+  it("CASE-001: the event findings still find the field under the flagged region with per-document signal ids", () => {
+    const out = runReasoning({ caseId: "CASE-001", documents: perDocumentIds(load("CASE-001")) });
+    const ev = out.findings.filter((f) => f.type === "REGION_EVENT" || f.type === "TEXT_LAYER_MISMATCH");
+    assert.equal(ev.length, 2);
+    assert.ok(ev.every((f) => (f.evidence[0]?.assertionIds ?? []).length === 1));
+    assert.deepEqual(out.events.map((e) => e.signalIds), [["SIG-001", "SIG-002"], ["SIG-001"]]);
+  });
+});
