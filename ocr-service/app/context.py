@@ -19,7 +19,8 @@ class AnalysisContext:
         self.document = document
         self.settings = settings
         self._cache: Dict[Any, Any] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()                   # guards the two dicts only; never held while computing
+        self._key_locks: Dict[Any, threading.Lock] = {}  # one lock per key: compute-once without blocking other keys
 
     @property
     def doc_id(self) -> str:
@@ -36,9 +37,17 @@ class AnalysisContext:
     def get_or_compute(self, key: Any, factory: Callable[[], Any]) -> Any:
         """Return the cached value for ``key``, computing it once with ``factory``."""
         with self._lock:
-            if key not in self._cache:
-                self._cache[key] = factory()
-            return self._cache[key]
+            if key in self._cache:
+                return self._cache[key]
+            key_lock = self._key_locks.setdefault(key, threading.Lock())
+        with key_lock:  # a hung factory only blocks callers that need this same key
+            with self._lock:
+                if key in self._cache:
+                    return self._cache[key]
+            value = factory()  # if this raises nothing is cached and the next caller retries
+            with self._lock:
+                self._cache[key] = value
+            return value
 
     def get_ocr_page(self, page: int, compute: Callable[[], OcrPage]) -> OcrPage:
         return self.get_or_compute(("ocr", page), compute)

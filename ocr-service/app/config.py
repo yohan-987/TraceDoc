@@ -6,6 +6,7 @@ This module also puts the repo's ``contracts/`` folder on ``sys.path`` (read-onl
 """
 from __future__ import annotations
 
+import math
 import os
 import sys
 from dataclasses import dataclass
@@ -49,6 +50,8 @@ class Settings:
     render_dpi: int = 150
     analyzer_timeout_s: float = 30.0
     max_pages: int = 100
+    max_image_pixels: int = 50_000_000  # per rendered page / input image; guards against memory bombs
+    max_total_pixels: int = 400_000_000  # all pages of one document together; bounds time and disk use
     pipeline_version: str = PIPELINE_VERSION
 
     @property
@@ -67,10 +70,17 @@ class Settings:
         dpi = int(os.environ.get("RENDER_DPI", "150"))
         timeout = float(os.environ.get("ANALYZER_TIMEOUT_S", "30"))
         max_pages = int(os.environ.get("MAX_PAGES", "100"))
+        max_pixels = int(os.environ.get("MAX_IMAGE_PIXELS", "50000000"))
+        max_total = int(os.environ.get("MAX_TOTAL_PIXELS", "400000000"))
         if not 72 <= dpi <= 600:
             raise ValueError("RENDER_DPI must be between 72 and 600")
-        if timeout <= 0:
-            raise ValueError("ANALYZER_TIMEOUT_S must be > 0")
+        if not math.isfinite(timeout) or not 0 < timeout <= 3600:
+            raise ValueError("ANALYZER_TIMEOUT_S must be a finite number of seconds in (0, 3600]")
         if max_pages < 1:
             raise ValueError("MAX_PAGES must be >= 1")
-        return cls(data_dir=data_dir, render_dpi=dpi, analyzer_timeout_s=timeout, max_pages=max_pages)
+        if max_pixels < 1:
+            raise ValueError("MAX_IMAGE_PIXELS must be >= 1")
+        if max_total < max_pixels:
+            raise ValueError("MAX_TOTAL_PIXELS must be >= MAX_IMAGE_PIXELS")
+        return cls(data_dir=data_dir, render_dpi=dpi, analyzer_timeout_s=timeout, max_pages=max_pages,
+                   max_image_pixels=max_pixels, max_total_pixels=max_total)

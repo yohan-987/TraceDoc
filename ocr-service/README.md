@@ -52,7 +52,7 @@ Tests use temporary directories and generated fictional documents only.
 
 ## Configuration (env vars, optional `.env`, see `.env.example`)
 
-`DATA_DIR` (default `../data`), `RENDER_DPI` (150), `ANALYZER_TIMEOUT_S` (30), `MAX_PAGES` (100),
+`DATA_DIR` (default `../data`), `RENDER_DPI` (150), `ANALYZER_TIMEOUT_S` (30), `MAX_PAGES` (100), `MAX_IMAGE_PIXELS` (50000000; larger images or PDF pages at the render DPI are rejected with 415),
 `CONTRACTS_DIR` (default `../contracts`).
 
 ## API
@@ -92,3 +92,16 @@ Add `app/analyzers/<module>.py` with a class derived from `Analyzer` decorated w
   until it returns. Hard isolation (subprocesses) is a candidate for O10.
 * Analyzers run sequentially. No job store, caching or idempotency (that is the Node side / later batches).
 * Mirrored EXIF orientations are corrected in the pixels but the mirror is not recorded.
+
+## Input limits and hardening
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `MAX_IMAGE_PIXELS` | 50,000,000 | largest single page / image; bigger input is rejected with 415 before it is decoded |
+| `MAX_TOTAL_PIXELS` | 400,000,000 | all pages of one document together (bounds time and disk use) |
+| `ANALYZER_TIMEOUT_S` | 30 | must be finite and in (0, 3600]; NaN/inf are refused at startup |
+
+* `docId` is limited to 128 characters (422 above that).
+* A multi-page TIFF renders one page per frame. Other multi-frame formats (GIF, APNG, WebP, MPO) render their first frame and log a warning.
+* The render is written through a unique temp file, so concurrent analyses of one document are safe.
+* The analysis context locks per key, so one slow computation does not stall unrelated ones.

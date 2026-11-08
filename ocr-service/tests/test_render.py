@@ -81,3 +81,30 @@ def test_garbage_file_unsupported(settings, put_original):
     put_original("BAD", "original.bin", b"not a document at all")
     with pytest.raises(UnsupportedDocumentError):
         render_document("BAD", settings)
+
+
+def test_image_over_the_pixel_limit_is_rejected_before_decoding(settings, put_original):
+    from app.config import Settings
+    small = Settings(**{**settings.__dict__, "max_image_pixels": 10_000})
+    put_original("BIG-IMG", "original.png", make_png_bytes((200, 120)))      # 24,000 px > 10,000
+    with pytest.raises(UnsupportedDocumentError) as info:
+        render_document("BIG-IMG", small)
+    assert "too large" in str(info.value)
+    assert not (small.derived_dir / "BIG-IMG").exists()                      # nothing was written
+
+
+def test_pdf_page_over_the_pixel_limit_is_rejected(settings, put_original):
+    from app.config import Settings
+    small = Settings(**{**settings.__dict__, "max_image_pixels": 100_000})   # A4 at 100 dpi is about 967,000 px
+    put_original("BIG-PDF", "original.pdf", make_pdf_bytes(pages=1))
+    with pytest.raises(UnsupportedDocumentError):
+        render_document("BIG-PDF", small)
+
+
+def test_pixel_limit_comes_from_the_environment(monkeypatch):
+    from app.config import Settings
+    monkeypatch.setenv("MAX_IMAGE_PIXELS", "1234")
+    assert Settings.from_env().max_image_pixels == 1234
+    monkeypatch.setenv("MAX_IMAGE_PIXELS", "0")
+    with pytest.raises(ValueError):
+        Settings.from_env()

@@ -34,12 +34,13 @@ except ImportError as exc:  # pragma: no cover - environment problem
     ) from exc
 
 __all__ = [
-    "AnalyzeRequest", "AnalyzeResponse", "AnalyzerResult", "AnalyzerStatus", "DOC_ID_PATTERN",
+    "DOC_ID_MAX_LEN", "AnalyzeRequest", "AnalyzeResponse", "AnalyzerResult", "AnalyzerStatus", "DOC_ID_PATTERN",
     "ExtractedField", "ForensicSignal", "InvalidDocIdError", "OcrPage", "PageRecord", "Provenance",
     "RenderedDocument", "RenderedPage", "Scalar", "validate_doc_id",
 ]
 
 DOC_ID_PATTERN = r"[A-Za-z0-9_-]+"
+DOC_ID_MAX_LEN = 128  # also keeps the id well under the 255-byte file-name limit
 _DOC_ID_RE = re.compile(DOC_ID_PATTERN)
 
 
@@ -49,8 +50,8 @@ class InvalidDocIdError(ValueError):
 
 def validate_doc_id(doc_id: str) -> str:
     """Defense in depth: the API model and the renderer both enforce this."""
-    if not isinstance(doc_id, str) or _DOC_ID_RE.fullmatch(doc_id) is None:
-        raise InvalidDocIdError("docId must match [A-Za-z0-9_-]+")
+    if not isinstance(doc_id, str) or len(doc_id) > DOC_ID_MAX_LEN or _DOC_ID_RE.fullmatch(doc_id) is None:
+        raise InvalidDocIdError(f"docId must match [A-Za-z0-9_-]+ and be at most {DOC_ID_MAX_LEN} characters")
     return doc_id
 
 
@@ -58,7 +59,7 @@ class AnalyzeRequest(BaseModel):
     """POST /analyze body. Document IDs only; unknown keys (e.g. a path) are rejected."""
 
     model_config = ConfigDict(extra="forbid")
-    docId: str = Field(pattern=rf"^{DOC_ID_PATTERN}$")
+    docId: str = Field(pattern=rf"^{DOC_ID_PATTERN}$", max_length=DOC_ID_MAX_LEN)
 
 
 @dataclass(frozen=True)
