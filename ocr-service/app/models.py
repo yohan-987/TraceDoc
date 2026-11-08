@@ -22,7 +22,9 @@ try:
         AnalyzerStatus,
         ExtractedField,
         ForensicSignal,
+        OcrLine,
         OcrPage,
+        OcrWord,
         PageRecord,
         Provenance,
         Scalar,
@@ -35,7 +37,8 @@ except ImportError as exc:  # pragma: no cover - environment problem
 
 __all__ = [
     "DOC_ID_MAX_LEN", "AnalyzeRequest", "AnalyzeResponse", "AnalyzerResult", "AnalyzerStatus", "DOC_ID_PATTERN",
-    "ExtractedField", "ForensicSignal", "InvalidDocIdError", "OcrPage", "PageRecord", "Provenance",
+    "ExtractedField", "ForensicSignal", "InvalidDocIdError", "OcrLine", "OcrPage", "OcrWord", "PageRecord",
+    "Provenance",
     "RenderedDocument", "RenderedPage", "Scalar", "validate_doc_id",
 ]
 

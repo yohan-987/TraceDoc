@@ -8,3 +8,6 @@ pillow>=10.4               # HPND (permissive)
 # Tests
 pytest>=8.0
 httpx>=0.27                # required by fastapi.testclient
+
+# OCR (O2) - also needs the native Tesseract 5 program + English data (see README)
+pytesseract>=0.3.10

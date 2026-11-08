@@ -93,6 +93,57 @@ Add `app/analyzers/<module>.py` with a class derived from `Analyzer` decorated w
 * Analyzers run sequentially. No job store, caching or idempotency (that is the Node side / later batches).
 * Mirrored EXIF orientations are corrected in the pixels but the mirror is not recorded.
 
+## OCR (batch O2)
+
+The `ocr` analyzer (`app/analyzers/ocr_tesseract.py`, core in `app/ocr_core.py` and `app/ocr.py`) runs
+Tesseract on each canonical page PNG and stores the shared-contract `OcrPage` (words + lines, boxes
+normalized to `[x, y, w, h]` in 0..1, confidence 0..1, 1-based pages) in the analysis context. It adds no
+fields or signals to the response: `/analyze` shows only its status and provenance
+(`config`: `lang`, `pages`, `pagesOk`, `words`, `lines`, optional `pagesFailed`/`reason`).
+
+### Install Tesseract (separate from `pip`)
+
+`pytesseract` is only a wrapper. You also need the native **Tesseract 5** program and the **English language
+data** (`eng.traineddata`, included in the standard Windows installer; keep the "English" language selected).
+
+* Windows installer: https://github.com/UB-Mannheim/tesseract/wiki
+* Tell the service where it is, in order of precedence: `TESSERACT_CMD` env var / `.env`
+  -> `tesseract` on `PATH` -> the standard `C:\Program Files\Tesseract-OCR\tesseract.exe` location.
+
+```powershell
+$env:TESSERACT_CMD = "C:\Program Files\Tesseract-OCR\tesseract.exe"
+```
+
+If Tesseract or the requested language is missing, the analyzer reports **`UNAVAILABLE`** (reason in
+`provenance[].config.reason`); `/analyze` still returns 200 with the rendered pages.
+
+### Settings
+
+`TESSERACT_CMD`, `OCR_LANG` (default `eng`), `OCR_PAGE_TIMEOUT_S` (default 25; per-page Tesseract limit).
+The O1 `ANALYZER_TIMEOUT_S` (default 30) still bounds the whole OCR analyzer, i.e. **all pages together**:
+raise it for long PDFs (about 1-3 s per page at 150 dpi).
+
+### Behaviour
+
+* Status `AVAILABLE`: every page was OCRed (a page with no text gives empty words/lines and the reason
+  "no text detected"; that is not a statement that the page is clean or empty of content).
+* Status `ERROR`: at least one page failed (corrupt render, Tesseract error/timeout, budget exhausted);
+  `pagesFailed` lists them. Pages that did succeed stay available in the context.
+* Reusing OCR in another analyzer: `from app.ocr import get_page_ocr` then `get_page_ocr(ctx, page_number)`.
+  The first call runs Tesseract, later calls (any analyzer) get the cached `OcrPage`; failures are cached too.
+  It raises `OcrUnavailableError` or `OcrPageError`, which the analyzer should map to a status.
+
+### Tests
+
+`tests/test_ocr_core.py` (parsing, no Tesseract) and `tests/test_ocr_analyzer.py` (Tesseract **mocked**)
+always run. `tests/test_ocr_real.py` calls the real Tesseract and is skipped automatically if it is not found.
+
+### Limitations
+
+English only; no PaddleOCR; no PDF text-layer words (`pdf_text_layer`) and no `/debug/ocr` endpoint (both
+mentioned in BUILD_PLAN for O2, left out here by instruction). Pages are OCRed sequentially, there is no
+preprocessing (deskew, binarization), and Tesseract confidence is an engine estimate, not accuracy.
+
 ## Input limits and hardening
 
 | Setting | Default | Meaning |
