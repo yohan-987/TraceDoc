@@ -15,3 +15,6 @@ pytesseract>=0.3.10
 # PaddleOCR (optional primary OCR engine) is deliberately NOT installed here: it is large and its wheels may not
 # exist for every Python version. Without it the service falls back to Tesseract. To enable it:
 #   python -m pip install -r requirements-paddle.txt
+
+# Field extractor (O4): YAML schemas (PyYAML is required to read them)
+PyYAML>=6.0

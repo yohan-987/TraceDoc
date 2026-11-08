@@ -266,6 +266,80 @@ Heuristic and English-only: a page whose wording is not in the lexicon is `UNKNO
 can be `AMBIGUOUS`. `other` is recognised only from its own vocabulary (invoice, letter, certificate, ...). The lexicon is
 fictional-document vocabulary and has not been tuned on real scans. Analysts can correct any type in the UI.
 
+## Field extractor (batch O4)
+
+The `page.field_extractor` analyzer (`app/analyzers/field_extractor.py`; engine `app/extract.py`; schemas
+`app/schemas/*.yaml`; normalizers and format-only validators `app/extract_normalize.py`) turns OCR words into contract
+`ExtractedField` objects. New dependency: **PyYAML** (to read the schemas).
+
+### What it extracts
+
+| docType | fields |
+| --- | --- |
+| `id_card` | `full_name`, `dob`, `id_number`, `address_permanent` |
+| `application_form` | `full_name`, `dob`, `address_permanent`, `address_current`, `requested_amount`, `signature` (region only) |
+| `bank_statement` | `account_holder`, `account_number`, `opening_balance`, `closing_balance`, `total` |
+
+The page type comes from the O3 classifier (`classification_store`); if it did not run, the same pure `classify_page` is applied
+to the page's OCR. `other`, `UNKNOWN` and `AMBIGUOUS` pages are skipped, never forced into a type (status `NOT_APPLICABLE` when
+no page qualifies). OCR is read from the context (cached OCR or seeded fixtures) and never computed twice.
+
+### Schemas (`app/schemas/<docType>.yaml`, shared `_settings.yaml`)
+
+Per field: `name`, `semanticType`, `normalizer`, `validators`, optional expected `region`, `continuationLines`, and ordered
+`strategies` (the first that finds a value wins): `anchor` (label regexes + optional value `pattern`, `pick: first|last`),
+`composite` (e.g. given names + surname) and `anchor_region` (signature box placed relative to the label). Anchors are regexes
+matched case-insensitively and word-bounded; the longest match on a line wins. `semanticType` is kept in the context
+(`extraction_store(ctx)`) for later batches; the contract's `ExtractedField` has no such field, so it is not emitted.
+A missing or malformed schema or settings file makes the analyzer report `ERROR` with the reason (never a crash).
+`FIELD_SCHEMAS_DIR` overrides the folder.
+
+### Strategy
+
+1. Find the label on an OCR line; the value is the text after it on that line (cut before the next `Label:`), else the value on
+   the same row to its right, else on the line(s) below. Address-like fields append up to `continuationLines` unlabeled lines.
+2. The pattern (`@date`, `@amount`, `@digits` or a regex) narrows the value. Text under a label that does not fit the pattern is
+   still returned (raw), flagged `INVALID_FORMAT` and with lower extractionConfidence.
+3. `rawValue` is the exact OCR text of the value (words joined by single spaces); it is never altered.
+   `normalizedValue`: ISO `YYYY-MM-DD` dates, plain two-decimal amounts (`1,250.00` -> `1250.00`, no currency conversion),
+   whitespace-collapsed text, digits-only account numbers; `null` when it cannot be normalized without guessing.
+4. `region.bbox` is the union of the value's OCR word boxes (not the label), normalized `[x, y, w, h]` on the canonical page.
+5. `ocrConfidence` = mean OCR confidence of the value words. `extractionConfidence` = the strategy's base confidence adjusted for
+   placement, pattern misses, competing candidates and the expected region (`_settings.yaml`); it never uses OCR confidence.
+6. `validationStatus` is a format check only (no lookups): `VALID`, `INVALID_FORMAT`, or `NOT_CHECKED` (no validator, or a
+   well-formed but ambiguous date with no configured order).
+
+Numeric dates with day and month both <= 12 (`12/08/2004`) are ambiguous. `dateOrder: DMY` in `_settings.yaml` follows the
+shared contract example (`12/08/2004` -> `2004-08-12`) and every such normalization is noted; set `dateOrder: null` to leave
+them un-normalized. Please confirm the convention with the samples owner.
+
+Low-confidence and invalid fields are **never dropped**: they are returned with their confidences and status, and listed in
+provenance (`page<N>.lowConfidence`, `.invalidFormat`, `.missing`). A field that is not found is not returned and not invented.
+The signature is only a box (`rawValue` empty, `ocrConfidence` 0.0, `NOT_CHECKED`): nothing is claimed about the signature.
+
+### Status and provenance
+
+`AVAILABLE` (fields returned), `NOT_APPLICABLE` (no supported page), `UNAVAILABLE` (no OCR for any page), `ERROR` (an OCR page,
+schema or settings problem; the registry then emits no fields from this analyzer, the other analyzers are unaffected).
+Provenance `config` holds the settings and scoring weights, schema versions and per-page docType, fields, missing and flags.
+
+### Accuracy report
+
+`python tools/accuracy_report.py` (and `tests/test_extractor_accuracy.py`) run the real classifier and extractor on the recorded
+OCR fixtures `contracts/fixtures/ocr/<docId>-page-N.json` and compare with **`samples/manifest.json`** (`SAMPLES_MANIFEST`,
+`OCR_FIXTURES_DIR`), printing `Document type | Doc | Field | Expected | Extracted | Match`, per-field accuracy, unexpected extracted
+fields and the comparisons that could not be performed. A missing expected field counts as a mismatch. If the manifest or the
+fixtures are missing, it says so and compares nothing. The manifest shape accepted is documented in `app/extract_report.py` and is an
+**assumption** until the samples owner confirms the real one. The test run also prints a clearly labelled SYNTHETIC table
+(self-authored pages), which is not the acceptance comparison.
+
+### Limits
+
+Anchor/regex heuristics for English labels; no table parsing (balances come from labelled lines); names, addresses and IDs are
+checked for format only; the `total` field takes the first amount on its row (lower confidence when several); the ID-number and
+account-number formats are generic placeholders (made-up formats), to be tightened once the real sample formats are known;
+text-layer words are not used (source is always `ocr`).
+
 ## Input limits and hardening
 
 | Setting | Default | Meaning |

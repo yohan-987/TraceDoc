@@ -33,7 +33,7 @@ from .ocr_paddle import PaddleFailure
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["EngineStatus", "OcrPageError", "OcrUnavailableError", "get_engine", "get_page_ocr",
+__all__ = ["EngineStatus", "OcrPageError", "OcrUnavailableError", "cached_page_ocr", "get_engine", "get_page_ocr",
            "ocr_availability"]
 
 
@@ -126,3 +126,21 @@ def get_page_ocr(ctx: AnalysisContext, page: int, timeout_s: Optional[float] = N
     except OcrPageError as exc:
         failures[page] = str(exc)
         raise
+
+
+class _NotCached(Exception):
+    pass
+
+
+def _raise_not_cached() -> OcrPage:
+    raise _NotCached()
+
+
+def cached_page_ocr(ctx: AnalysisContext, page: int) -> Optional[OcrPage]:
+    """OCR already in the context (live OCR cached earlier, or recorded fixtures seeded into it), else None.
+
+    Never runs OCR and never needs an OCR engine; a miss leaves the cache untouched."""
+    try:
+        return ctx.get_ocr_page(page, _raise_not_cached)
+    except _NotCached:
+        return None

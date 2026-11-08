@@ -1,0 +1,49 @@
+# Field schema for id_card pages. Anchors are regular expressions matched case-insensitively on OCR line text
+# (word-bounded). "@date", "@amount", "@digits" are built-in patterns (see app/extract_normalize.py).
+docType: id_card
+schemaVersion: "1"
+fields:
+  - name: full_name
+    semanticType: person_name
+    normalizer: text
+    validators: [person_name]
+    strategies:
+      - kind: anchor
+        anchors: ["full name", "name of (?:the )?holder", "holder'?s? name", "^name(?=\\s*[:\\-])"]
+        confidence: 0.90
+      - kind: composite          # "Given names" + "Surname" printed on separate labelled lines
+        parts:
+          - ["given names?", "first names?", "forenames?"]
+          - ["surname", "family name", "last name"]
+        confidence: 0.80
+
+  - name: dob
+    semanticType: dob
+    normalizer: date
+    validators: [date]
+    strategies:
+      - kind: anchor
+        anchors: ["date of birth", "birth date", "dob", "born"]
+        pattern: "@date"
+        confidence: 0.92
+
+  - name: id_number
+    semanticType: id_number
+    normalizer: id
+    # The ID format is a made-up one; this generic check only requires 5-25 letters, digits or hyphens.
+    validators:
+      - {name: regex, pattern: "^[A-Za-z0-9][A-Za-z0-9\\-]{4,24}$"}
+    strategies:
+      - kind: anchor
+        anchors: ["id (?:number|no\\.?)", "identity (?:number|no\\.?)", "card (?:number|no\\.?)", "document (?:number|no\\.?)"]
+        confidence: 0.92
+
+  - name: address_permanent
+    semanticType: address_permanent
+    normalizer: text
+    validators: [address]
+    continuationLines: 2
+    strategies:
+      - kind: anchor
+        anchors: ["permanent address", "address \\(permanent\\)", "residential address", "^address(?=\\s*[:\\-])"]
+        confidence: 0.88

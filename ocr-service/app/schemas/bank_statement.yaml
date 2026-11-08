@@ -1,0 +1,56 @@
+docType: bank_statement
+schemaVersion: "1"
+fields:
+  - name: account_holder
+    semanticType: person_name
+    normalizer: text
+    validators: [person_name]
+    strategies:
+      - kind: anchor
+        anchors: ["account holder(?:'?s)?(?: name)?", "name of (?:the )?account holder", "account name",
+                  "customer name", "^name(?=\\s*[:\\-])"]
+        confidence: 0.90
+
+  - name: account_number
+    semanticType: account_number
+    normalizer: digits
+    validators:
+      - {name: regex, pattern: "^[0-9]{6,20}$"}
+    strategies:
+      - kind: anchor
+        anchors: ["account (?:number|no\\.?)", "a/c (?:number|no\\.?)", "acct\\.? (?:number|no\\.?)"]
+        pattern: "@digits"
+        confidence: 0.92
+
+  - name: opening_balance
+    semanticType: account_balance
+    normalizer: amount
+    validators: [amount]
+    strategies:
+      - kind: anchor
+        anchors: ["opening balance", "balance brought forward", "balance b/f"]
+        pattern: "@amount"
+        pick: last             # on a table row the balance column is the right-most amount
+        confidence: 0.92
+
+  - name: closing_balance
+    semanticType: account_balance
+    normalizer: amount
+    validators: [amount]
+    strategies:
+      - kind: anchor
+        anchors: ["closing balance", "balance carried forward", "balance c/f", "ending balance"]
+        pattern: "@amount"
+        pick: last
+        confidence: 0.92
+
+  - name: total
+    semanticType: statement_total
+    normalizer: amount
+    validators: [amount]
+    strategies:
+      - kind: anchor
+        anchors: ["grand total", "^totals?(?: amount)?(?=\\s|:|$)"]
+        pattern: "@amount"
+        pick: first            # a totals row may hold several amounts: more than one lowers extractionConfidence
+        confidence: 0.80

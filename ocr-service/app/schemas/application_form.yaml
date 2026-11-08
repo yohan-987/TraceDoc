@@ -1,0 +1,66 @@
+docType: application_form
+schemaVersion: "1"
+fields:
+  - name: full_name
+    semanticType: person_name
+    normalizer: text
+    validators: [person_name]
+    strategies:
+      - kind: anchor
+        anchors: ["full name(?: of (?:the )?applicant)?", "name of (?:the )?applicant", "applicant'?s? name", "^name(?=\\s*[:\\-])",
+                  "applicant(?=\\s*[:\\-])"]
+        confidence: 0.90
+
+  - name: dob
+    semanticType: dob
+    normalizer: date
+    validators: [date]
+    strategies:
+      - kind: anchor
+        anchors: ["date of birth", "birth date", "dob"]
+        pattern: "@date"
+        confidence: 0.92
+
+  - name: address_permanent
+    semanticType: address_permanent
+    normalizer: text
+    validators: [address]
+    continuationLines: 2
+    strategies:
+      - kind: anchor
+        anchors: ["permanent address", "address \\(permanent\\)", "residential address", "^address(?=\\s*[:\\-])"]
+        confidence: 0.88
+
+  - name: address_current
+    semanticType: address_current
+    normalizer: text
+    validators: [address]
+    continuationLines: 2
+    strategies:
+      - kind: anchor
+        anchors: ["current address", "present address", "address \\(current\\)", "mailing address",
+                  "correspondence address"]
+        confidence: 0.88
+
+  - name: requested_amount
+    semanticType: requested_amount
+    normalizer: amount
+    validators: [amount]
+    strategies:
+      - kind: anchor
+        anchors: ["requested (?:loan )?amount", "amount requested", "loan amount", "amount applied for"]
+        pattern: "@amount"
+        pick: first
+        confidence: 0.92
+
+  - name: signature            # a region observation only: no text is read and no claim is made about the signature
+    semanticType: signature_region
+    normalizer: none
+    validators: []
+    strategies:
+      - kind: anchor_region
+        anchors: ["(?:applicant'?s? )?signature(?: of (?:the )?applicant)?"]
+        placement: right       # box to the right of the label ("below" puts it under the label)
+        width: 0.30
+        height: 0.05
+        confidence: 0.50

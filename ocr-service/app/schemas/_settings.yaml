@@ -1,0 +1,20 @@
+# Shared extractor settings (not a document type; files starting with "_" are never read as schemas).
+settingsVersion: "1"
+
+# A field is *flagged* in provenance (never dropped) when its OCR or extraction confidence is below these.
+lowOcrConfidence: 0.60
+lowExtractionConfidence: 0.50
+
+# Numeric dates where day and month are both <= 12 (e.g. 12/08/2004) are ambiguous on their face.
+# DMY follows the shared contract example (12/08/2004 -> 2004-08-12). Use null to leave such dates un-normalized.
+dateOrder: DMY
+
+# extractionConfidence = strategy base confidence (see each schema) adjusted by these; OCR confidence is never used.
+scoring:
+  regionMatchBonus: 0.05          # value lies inside the field's expected region
+  regionMissPenalty: 0.15         # value lies outside the expected region
+  multipleCandidatesPenalty: 0.10 # several different values matched; the first in reading order is returned
+  patternMissPenalty: 0.20        # text found under the label but not in the expected shape (e.g. not date-like)
+  rightPlacementPenalty: 0.05     # value found to the right of a label-only line
+  belowPlacementPenalty: 0.10     # value found on the line(s) below a label-only line
+  continuationPenalty: 0.00       # extra lines appended to a multi-line value (addresses)
