@@ -148,7 +148,7 @@ export function HomePage() {
 
   const exportDocs: ExportDocument[] = rows.map((row) => ({ docId: row.doc.docId, caseId: row.doc.caseId, caseTitle: row.caseTitle, filename: row.doc.filename, status: row.status, analyzersRan: row.ran, analyzersPossible: row.possible, findings: row.findings }));
   const withFindings = rows.filter((row) => row.findings.length > 0).length;
-  const partialOrFailed = rows.filter((row) => row.status === "PARTIAL" || row.status === "FAILED").length;
+  const partialOrFailed = rows.filter((row) => row.status === "PARTIAL" || row.status === "FAILED" || row.casePriority?.incompleteCoverage === true).length;
 
   return (
     <>
@@ -156,7 +156,7 @@ export function HomePage() {
       <div className="stat-grid">
         <StatCard icon="documents" label="Documents analysed" value={rows.length} hint={`across ${caseList.length} ${caseList.length === 1 ? "case" : "cases"}`} />
         <StatCard icon="findings" label="With findings" value={findingsLoading ? "…" : withFindings} hint="at least one observation recorded" tone={withFindings > 0 ? "amber" : "green"} />
-        <StatCard icon="scanner" label="Partial or failed" value={partialOrFailed} hint="not every analyzer ran" tone={partialOrFailed > 0 ? "red" : "green"} />
+        <StatCard icon="scanner" label="Partial or failed" value={partialOrFailed} hint="not every expected analyzer ran" tone={partialOrFailed > 0 ? "red" : "green"} />
         <StatCard icon="cases" label="Cases" value={caseList.length} hint="documents are grouped into cases" to="/cases" />
       </div>
 
