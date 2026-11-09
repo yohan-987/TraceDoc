@@ -135,6 +135,26 @@
     "findingType": "STATEMENT_TOTAL_MISMATCH"
   },
   {
+    "ruleId": "R-STMT-DEBIT-ARITH",
+    "ruleType": "ARITHMETIC",
+    "semanticTypes": [
+      "txn_debit_amount",
+      "statement_debit_total"
+    ],
+    "entityRoles": [
+      "applicant",
+      "co_applicant",
+      "guarantor",
+      "nominee",
+      "account_holder",
+      "unknown"
+    ],
+    "matchMethod": "sum_equals",
+    "severity": "medium",
+    "note": "The printed total debits must equal the sum of the listed debit row amounts of the same document.",
+    "findingType": "STATEMENT_TOTAL_MISMATCH"
+  },
+  {
     "ruleId": "R-TEMP-DOB-BEFORE-ISSUE",
     "ruleType": "TEMPORAL",
     "semanticTypes": [

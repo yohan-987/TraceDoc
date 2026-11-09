@@ -60,7 +60,11 @@ describe("field name mapping", () => {
   it("maps the O4 extractor names for bank statements to canonical semantic types", () => {
     assert.equal(classifyFieldName("account_holder").semanticType, "full_name");
     assert.equal(classifyFieldName("closing_balance").semanticType, "account_balance");
-    assert.equal(classifyFieldName("total").semanticType, "statement_total");
+    assert.equal(classifyFieldName("total_credits").semanticType, "statement_total");
+    assert.equal(classifyFieldName("total_debits").semanticType, "statement_debit_total");
+    assert.equal(classifyFieldName("debit_amount").semanticType, "txn_debit_amount");
+    // a bare "total" can be the debits or the credits column: it stays unmapped so it never joins an arithmetic check
+    assert.equal(classifyFieldName("total").semanticType, "total");
     assert.equal(classifyFieldName("opening_balance").semanticType, "opening_balance");
   });
   it("handles case, spaces and dashes, and passes unknown names through", () => {

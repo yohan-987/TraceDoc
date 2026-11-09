@@ -233,6 +233,41 @@ describe("SUGGESTED links", () => {
 });
 
 // ------------------------------------------------------------------------------------------------ context rules
+describe("ARITHMETIC: debits and credits are checked separately", () => {
+  const stmt = (credits: string[], creditTotal: string | null, debits: string[], debitTotal: string | null, extra: Array<[string, string]> = []) => {
+    const as = [
+      ...credits.map((v) => A("S1", "txn_amount", v, "E1")), ...(creditTotal === null ? [] : [A("S1", "statement_total", creditTotal, "E1")]),
+      ...debits.map((v) => A("S1", "txn_debit_amount", v, "E1")), ...(debitTotal === null ? [] : [A("S1", "statement_debit_total", debitTotal, "E1")]),
+      ...extra.map(([t, v]) => A("S1", t, v, "E1")),
+    ];
+    return evaluate(as, [E("E1", "account_holder", as)]);
+  };
+  it("matching credits and debits produce no finding", () => assert.deepEqual(stmt(["100.00", "20.50"], "120.50", ["10.00", "5.25"], "15.25"), []));
+  it("a wrong DEBITS total is found (scenario S7a: printed 2205.10, rows sum to 2105.10)", () => {
+    const f = stmt(["100.00"], "100.00", ["2000.00", "105.10"], "2205.10");
+    assert.equal(f.length, 1);
+    assert.deepEqual([f[0]?.type, f[0]?.observationStatus, f[0]?.evidence[0]?.measurements?.["ruleId"], f[0]?.evidence[0]?.measurements?.["difference"]],
+      ["STATEMENT_TOTAL_MISMATCH", "INCONSISTENT", "R-STMT-DEBIT-ARITH", "100.00"]);
+  });
+  it("a wrong CREDITS total is still found by the credits rule only", () => {
+    const f = stmt(["100.00"], "101.00", ["10.00"], "10.00");
+    assert.deepEqual(f.map((x) => x.evidence[0]?.measurements?.["ruleId"]), ["R-STMT-TOTAL-ARITH"]);
+  });
+  it("debit rows are never summed into the credits total", () => assert.deepEqual(stmt(["100.00"], "100.00", ["50.00"], "50.00"), []));
+  it("a bare 'total' (debits or credits, unknowable) never joins an arithmetic check", () => {
+    assert.deepEqual(stmt(["100.00"], "100.00", ["50.00"], "50.00", [["total", "999.99"]]), []);
+  });
+  it("a debits total with no debit rows is INCONCLUSIVE, not silently fine", () => {
+    const f = stmt(["100.00"], "100.00", [], "50.00");
+    assert.deepEqual([f[0]?.type, f[0]?.observationStatus], ["STATEMENT_TOTAL_UNVERIFIABLE", "INCONCLUSIVE"]);
+  });
+  it("an unreadable debit row is INCONCLUSIVE", () => {
+    const as = [A("S1", "txn_debit_amount", "10.00", "E1"), A("S1", "txn_debit_amount", null, "E1"), A("S1", "statement_debit_total", "10.00", "E1")];
+    const f = evaluate(as, [E("E1", "account_holder", as)]);
+    assert.deepEqual([f[0]?.type, f[0]?.observationStatus], ["STATEMENT_TOTAL_UNVERIFIABLE", "INCONCLUSIVE"]);
+  });
+});
+
 describe("ARITHMETIC", () => {
   const stmt = (items: Array<string | null>, total: string | null, docId = "S1") => {
     const as = [...items.map((v) => A(docId, "txn_amount", v, "E1")), A(docId, "statement_total", total, "E1")];

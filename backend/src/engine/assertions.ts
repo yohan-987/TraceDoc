@@ -29,9 +29,12 @@ const CANONICAL_ALIASES: Record<string, string[]> = {
   account_number: ["account_number", "account_no", "acct_number"],
   account_balance: ["account_balance", "closing_balance"],
   opening_balance: ["opening_balance"],
-  statement_total: ["statement_total", "total", "total_deposits", "total_credits"],
+  // a bare "total" is deliberately NOT an alias: on a statement it can be the debits or the credits column, so it never joins an arithmetic check
+  statement_total: ["statement_total", "total_deposits", "total_credits"],
+  statement_debit_total: ["statement_debit_total", "total_debits", "total_withdrawals"],
   statement_date: ["statement_date", "statement_period_end", "as_of_date"],
-  txn_amount: ["txn_amount", "transaction_amount", "row_amount"],
+  txn_amount: ["txn_amount", "transaction_amount", "row_amount"], // credit rows, checked against statement_total
+  txn_debit_amount: ["txn_debit_amount", "debit_amount", "transaction_debit_amount"], // debit rows, checked against statement_debit_total
   effective_date: ["effective_date"],
   document_date: ["document_date"],
 };
@@ -179,7 +182,7 @@ const DOC_DATE_PREFERENCE: Record<string, string[]> = {
 };
 const DOC_DATE_FALLBACK = ["issue_date", "application_date", "statement_date", "document_date"];
 /** Balances and totals apply as of the statement date unless the document gives an explicit effective_date. */
-const EFFECTIVE_AT_STATEMENT_DATE = new Set(["account_balance", "statement_total"]);
+const EFFECTIVE_AT_STATEMENT_DATE = new Set(["account_balance", "statement_total", "statement_debit_total"]);
 
 function docLevelDates(docFields: Array<{ semanticType: string; field: ExtractedField }>, docType: DocType | undefined) {
   const first = (type: string): string | null => {
