@@ -368,13 +368,13 @@ function ResultStep({ jobs, documents, active, ready, summaryFor, findingsFor, a
         <dl className="readings" aria-label="Three separate readings">
           <div><dt className="label">Confidence</dt><dd className="big-number">{priority ? pct(priority.confidence) : "—"}</dd><small>how sure the evidence is</small></div>
           <div><dt className="label">Severity of top finding</dt><dd className="big-number reading-text">{top[0] ? humanize(top[0].finding.severity) : failed ? "—" : "None observed"}</dd><small>how much it would matter if confirmed</small></div>
-          <div><dt className="label">Coverage</dt><dd className="big-number">{coverage.ran} / {coverage.possible}</dd><small>possible analyzers that ran</small></div>
+          <div><dt className="label">Coverage</dt><dd className="big-number">{coverage.ran} / {coverage.possible}</dd><small>{priority?.incompleteCoverage ? `analyzers that ran of those reported; ${priority.missingAnalyzers?.length ?? 0} more expected but not installed (${(priority.missingAnalyzers ?? []).join(", ")})` : "possible analyzers that ran"}</small></div>
         </dl>
         {!failed && (
           <section>
             <p className="label">Primary observations</p>
             {top.length === 0 ? (
-              <p className="muted-text">{coverage.ran > 0 ? "No anomalies observed by the analyzers that ran." : "No analyzer ran, so this is not a clean result."}</p>
+              <p className="muted-text">{coverage.ran > 0 ? (priority?.incompleteCoverage ? "No anomalies observed by the analyzers that ran. Coverage is incomplete, so this is not a clean result." : "No anomalies observed by the analyzers that ran.") : "No analyzer ran, so this is not a clean result."}</p>
             ) : (
               <ol className="why-list">
                 {top.slice(0, 3).map((item, index) => (

@@ -230,7 +230,7 @@ export function FindingDetailPage() {
                   <div className="explanation-block"><h3>Recommended review</h3><ul>{finding.explanation.recommendedReview.map((item) => <li key={item}>{item}</li>)}</ul></div>
                 </div>
               </>
-            ) : <p className="muted-copy">No structured explanation is recorded for this fixture finding.</p>}
+            ) : <p className="muted-copy">No structured explanation is recorded for this finding.</p>}
             {finding.needsVerification.length > 0 && <div className="verification-note"><strong>Needs verification</strong><ul>{finding.needsVerification.map((item) => <li key={item}>{item}</li>)}</ul></div>}
           </section>
           <section className="panel">

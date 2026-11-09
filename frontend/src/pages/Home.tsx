@@ -245,7 +245,7 @@ function DocTableRow({ row, selected, onSelect, loadingFindings }: { row: DocRow
       <td>{row.types === null ? <Skeleton width={70} /> : row.types.length === 0 ? "—" : row.types.map((type) => DOC_TYPE_LABEL[type] ?? type).join(", ")}</td>
       <td title={doc.receivedAt}>{relativeTime(doc.receivedAt)}</td>
       <td><StatusBadge status={row.status} /></td>
-      <td><span className="mono-value">{row.ran} / {row.possible}</span></td>
+      <td><span className="mono-value">{row.ran} / {row.possible}</span>{row.casePriority?.incompleteCoverage && <small className="muted-text"> incomplete</small>}</td>
       <td>
         {loadingFindings ? <Skeleton width={30} /> : (
           <>
@@ -268,7 +268,7 @@ function PreviewPanel({ row, onClose }: { row: DocRow; onClose: () => void }) {
         <div><p className="label">Selected document</p><h2>{row.doc.filename}</h2><span className="mono-value">{row.doc.docId}</span></div>
         <button type="button" className="icon-button" aria-label="Close preview" onClick={onClose}><Icon name="close" size={16} /></button>
       </div>
-      <div className="preview-row"><StatusBadge status={row.status} /><span className="mono-value">{row.ran} of {row.possible} possible analyzers ran</span></div>
+      <div className="preview-row"><StatusBadge status={row.status} /><span className="mono-value">{row.ran} of {row.possible} reported analyzers ran{row.casePriority?.incompleteCoverage ? ` · ${row.casePriority.missingAnalyzers?.length ?? 0} expected analyzers not installed` : ""}</span></div>
       <section>
         <p className="label">Top observations</p>
         {top.length === 0 ? (
