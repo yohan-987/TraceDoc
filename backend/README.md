@@ -154,7 +154,7 @@ npm run typecheck
   from `contracts/`. Both carry the same content, and each export appends an `EXPORT` event (format, generation, finding count, integrity result).
   Unknown `format` is 400, unknown case 404. Code: `src/reports/bundle.ts` (collects the data, computes the limitations),
   `src/reports/dossier.ts` (renders with `pdfkit`, MIT), `src/reports/service.ts`, `src/routes/dossier.ts`.
-- Sections follow BUILD_PLAN B14: **1** document overview (type, source, SHA-256, processing status), **2** extracted information (OCR and
+- Sections: **1** document overview (type, source, SHA-256, processing status), **2** extracted information (OCR and
   extraction confidence kept separate), **3** contextual analysis (entities, cross-document and context findings), **4** visual forensic findings
   (which checks ran, findings, region events and signals), **5** evidence and traceability (document, page and normalized bounding box for every
   region, plus a crop of the real page render with the box drawn in red), **6** investigation summary (anomalies, potential explanations, areas

@@ -3,7 +3,7 @@
 AI-assisted document forensics and contextual intelligence (hackathon prototype, built from scratch).
 Fictional documents only. Findings are observations or potential anomalies, never fraud verdicts.
 
-See `ARCHITECTURE.md` (design) and `BUILD_PLAN.md` (batches and ownership), `docs/INTEGRATION_STATUS.md` (what works, verified) and `docs/LIMITATIONS.md`. Full README (setup, licenses,
+See `ARCHITECTURE.md` (design), `docs/INTEGRATION_STATUS.md` (what works, verified) and `docs/LIMITATIONS.md`. Full README (setup, licenses,
 AI-assistance disclosure) is written in batch X3.
 
 | Folder | Purpose |
