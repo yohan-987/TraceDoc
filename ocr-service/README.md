@@ -422,6 +422,71 @@ read); wrapped description lines are ignored; a statement whose later pages have
 would be mis-assigned (provenance says "previous page"); more than one Totals row (per-page subtotals) emits all of them.
 Column assignment cannot repair an OCR misread, only report what was printed.
 
+## Text layer vs render (batch O6)
+
+Analyzer `pdf.textlayer` (`app/analyzers/pdf_text_layer_mismatch.py`, comparison in `app/textlayer_check.py`).
+It compares the words a digital PDF carries in its text layer with what OCR reads on the rendered page and reports
+**where the two disagree**. It reports an observation (`TEXT_LAYER_MISMATCH`), never who changed what or why. The id is
+`pdf.textlayer` because that is what `backend/config/engine.json`, the frontend and `contracts/fixtures/analyze/D-03.json`
+use; the older `pdf.text_layer_words` analyzer (O2b, the layer itself) is a different thing and stays.
+
+| `measurements.kind` | Meaning | How it is decided |
+|---|---|---|
+| `layer_only` | Words are in the layer and nothing is visible there (white on white, invisible render mode, covered by a patch, too small to read). Confidence 0.70 up to 0.85 with more words. | The **pixels** under the word are blank (outside the words OCR did read), or the word is under 5 px high. OCR alone is not enough: a word OCR merely failed to read has ink under it and is only counted (`layerWordsWithInkButNoOcr`). |
+| `differs` | The layer says one thing, the page visibly shows another at the same place (stale or overlaid text). Two regions: "what the text layer says" / "what the page shows". Confidence 0.75. | The OCR word must really sit on the layer word (a share of each lies over the other, so an OCR box inflated by a highlight does not count), and a second reading from a re-render at twice the resolution must still disagree. Small text is often misread (1 for 4); if the sharper reading agrees with the layer nothing is reported (`differsExplainedByRereading`). Without Tesseract the candidate is kept and counted in `differsUnverified`. |
+| `render_only` | Visible text the layer lacks. Confidence 0.35. **Off by default** (`flagRenderOnly`). | On the 44 clean sample PDFs it produced one false signal (S3b, drawn text), so it is opt-in. |
+
+Measurements follow the recorded fixture (`renderedText`, `textLayerText`, `differingChars`) plus `kind`, `reason`,
+`rereadText`, `pageAgreement`, `pageLayerWords`, `pageOcrWords`, `scope`. Signal ids are `<docId>-tlmm-p<page>-<nn>`.
+
+Status: `NOT_APPLICABLE` for image originals and for PDFs with no text layer (a scan; nothing to compare is not "clean").
+`ERROR` when a page cannot be compared (OCR failed, more than `maxWordsPerPage` words, bad config), naming the pages.
+`UNAVAILABLE` when OCR read too little of every page to judge (rotated 180/270, shaded backgrounds) or no engine exists.
+If OCR read plenty but barely agrees with the layer, one page-level signal (`scope = page`, confidence 0.35) is added.
+
+### Thresholds (`config/text_layer_check.json`, override with `TEXT_LAYER_CHECK_CONFIG`)
+
+Every value is echoed into each signal's provenance as `cfg.<name>`; NaN/Infinity and nonsensical values are refused at load.
+
+| Name | Default | Meaning |
+|---|---|---|
+| `textSimilarityMin` / `numericSimilarityMin` | 0.6 / 0.9 | Two readings agree at or above this similarity. Digits are stricter: one wrong digit is a different value. Common OCR confusions (O/0, l/1/I, S/5, B/8) are folded first. |
+| `minWordChars`, `minGroupChars` | 2, 3 | Words, and mismatching groups, with fewer letters/digits are ignored (tiny differences). |
+| `minOcrConfidence` | 0.5 | OCR words below this are not trusted as visible text. |
+| `differsMinOverlap`, `differsMinOcrShare` | 0.5, 0.3 | What "the same place" means for `differs`. |
+| `inkDelta`, `inkMinFraction`, `inkPadPx` | 40, 0.01, 1 | A pixel is ink if it differs from the local background by more than `inkDelta`; an area under `inkMinFraction` ink is blank. At least 70 % of the word's box must lie outside words OCR read, else it is not judged. |
+| `minBoxHeightPx`, `tinyHeightPx`, `edgeMarginFrac` | 2, 5, 0.008 | Degenerate boxes are ignored; an unread word under `tinyHeightPx` is reported as too small to read; words touching the page edge (clipped glyphs) are not judged. |
+| `groupGapFactor` | 1.5 | Neighbouring mismatches (beside, or stacked in a column) closer than this many word heights form one signal. |
+| `minPageAgreement`, `minOcrCoverage`, `minWordsForAgreement` | 0.25, 0.5, 6 | Page-level handling: OCR that read fewer than half as many words as the layer holds means "not comparable", not a finding. |
+| `rereadScale`, `rereadPadFrac`, `rereadTimeoutS`, `maxRereadsPerPage` | 2.0, 0.3, 10, 10 | The second reading of `differs` candidates (`rereadScale` 0 turns it off). |
+| `maxWordsPerPage`, `maxSignalsPerPage` | 20000, 25 | Work and output bounds (overflow is counted in `signalsDropped`). |
+| `hiddenConfidence`, `hiddenConfidencePerWord`, `hiddenConfidenceMax`, `differsConfidence`, `renderOnlyConfidence`, `pageLevelConfidence` | 0.70, 0.04, 0.85, 0.75, 0.35, 0.35 | Signal confidences. |
+
+### Measured (real Tesseract)
+
+| Check | Result |
+|---|---|
+| T-08 white text, T-09 invisible text (`samples/tampered`) | one signal each, `layer_only`, the hidden text read back exactly (`USD 56,500.00`, `1969-12-31`), IoU with the ground-truth box 0.79 and 0.79 |
+| The other 44 sample PDFs (genuine, controls, other tampers, dev and test scenarios) | no signal, at 150 dpi and at the 100 dpi of the test fixture |
+| 200 generated genuine pages (random fonts, sizes, colours, shaded and dark bands, rotation) at 100, 150 and 200 dpi | no signal |
+| The same pages with a hidden item added: white text, invisible mode, covered by a patch, 1.2 pt font, near-white text, text under an image patch | all 30 found, once each |
+| Searchable scan (picture plus matching invisible layer) / the same plus one extra invisible line | no signal / the extra line, once |
+
+Tests: `tests/test_text_layer_check.py` (algorithm), `tests/test_textlayer_check_config.py`,
+`tests/test_text_layer_mismatch_analyzer.py` (simulated OCR, no engine needed) and `tests/test_text_layer_mismatch_samples.py`
+(real OCR over every sample PDF; skipped without Tesseract).
+
+### Limits, stated plainly
+
+- **Text under something drawn is not found.** If hidden text lies under a picture, a rule or other visible ink and OCR does
+  not read that ink as the same words, the area is not blank and the word is only counted in `layerWordsWithInkButNoOcr`.
+- **Text placed outside the page** is dropped by the PDF text extraction before this check sees it.
+- **A hidden value that happens to occur inside a visible one at the matching position** passes as a merged reading.
+- **OCR limits become coverage limits.** Rotated 180/270 pages and some shaded pages are not read, so they are reported
+  `UNAVAILABLE`, not clean. Small text at low `RENDER_DPI` is read worse; the second reading needs Tesseract.
+- Thresholds were set on the D1/D2 samples plus generated pages, all synthetic; they are not validated on real-world PDFs.
+- Mismatch means "the two readings disagree here". Legitimate causes exist (OCR layers added to scans, watermarks, fonts OCR cannot read).
+
 ## D1 accuracy evaluation (real pipeline)
 
 `tools/d1_accuracy_report.py` runs the **production pipeline** (`render_document` -> OCR -> `page.classifier` ->
