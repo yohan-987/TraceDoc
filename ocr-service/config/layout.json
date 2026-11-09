@@ -1,0 +1,22 @@
+{
+  "configVersion": "1",
+  "rowYToleranceFactor": 0.6,
+  "skewMaxDeg": 3.0,
+  "skewStepDeg": 0.1,
+  "minHeaderRoles": 3,
+  "headerDate": ["date", "txn date", "value date", "posting date"],
+  "headerDescription": ["description", "details", "particulars", "narration", "transaction"],
+  "headerDebit": ["debit", "debits", "withdrawal", "withdrawals", "paid out", "dr"],
+  "headerCredit": ["credit", "credits", "deposit", "deposits", "paid in", "cr"],
+  "headerBalance": ["balance"],
+  "totalsKeywords": ["total", "totals"],
+  "datePatterns": [
+    "^\\d{1,2}[/.-]\\d{1,2}[/.-]\\d{2,4}$",
+    "^\\d{4}-\\d{2}-\\d{2}$",
+    "^\\d{1,2} [A-Za-z]{3,9},? \\d{2,4}$"
+  ],
+  "amountColumnMaxDistance": 0.06,
+  "confidenceHeaderOnPage": 0.9,
+  "confidenceInheritedColumns": 0.75,
+  "confidenceAmbiguityPenalty": 0.25
+}

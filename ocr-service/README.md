@@ -384,6 +384,44 @@ Known limits, stated plainly:
 Tests: `tests/test_image_forensics.py` (synthetic pages) and `tests/test_image_forensics_samples.py` (the samples
 above; the two undetected edits are `xfail`, deliberately not tuned to pass).
 
+## Layout and tables (batch O5)
+
+Plugin `layout.tables` (`app/analyzers/layout_tables.py`, pure geometry in `app/layout.py`, thresholds and the header
+vocabulary in `config/layout.json`, override with `LAYOUT_CONFIG`; every value is echoed into provenance as `cfg.<name>`).
+It reads the OCR already in the shared context and, for pages the classifier calls `bank_statement`, reads the
+transaction table from word geometry:
+
+1. words are grouped into rows (after compensating a small page tilt, up to `skewMaxDeg`, estimated from the words);
+2. a header row naming at least `minHeaderRoles` of Date / Description / Debit / Credit / Balance defines the columns;
+3. rows that start with a date are transactions; amount words go to the nearest amount column by right edge, centre or
+   left edge (right-aligned numbers share a right edge); a missing cell stays missing and never shifts a neighbour;
+4. the first later row starting with "Total(s)" supplies the stated totals and ends the table;
+5. a page without its own header inherits the previous page's columns (statements that run over several pages).
+
+Emitted fields (ids `TBL-001`..., unique per document and continuing across pages): `txn_amount` for each CREDIT row,
+`debit_amount` for each DEBIT row, `total_credits` and `total_debits` from the Totals row. The backend sums
+`txn_amount` against `total_credits` (R-STMT-TOTAL-ARITH) and `debit_amount` against `total_debits`
+(R-STMT-DEBIT-ARITH). `rawValue` is the printed text, `normalizedValue` a plain two-decimal string; an amount that
+cannot be read (for example `2.400,00`) is still returned as `INVALID_FORMAT` so a downstream sum is never silently short.
+Provenance lists per page the columns used and where they came from, the row count, tilt, rows with problems,
+`unreadableAmounts`, `totalsRows` and `balanceChainBreaks` (rows whose printed balance is not the previous balance plus
+credit minus debit; a count of observations, not a conclusion). Status: `NOT_APPLICABLE` when no page is a statement,
+`AVAILABLE` otherwise (zero fields plus `tablesFound=0` when no table is recognised), `UNAVAILABLE` when OCR is not available.
+
+### Measured on the D1 statement samples (live Tesseract, 200 dpi render, `tests/test_layout_samples.py`)
+
+| Variant | Result |
+|---|---|
+| digital PDF (both statements) | all credit rows, debit rows and both totals exact |
+| scan (both) | exact (needs the tilt compensation) |
+| recompressed (both) | exact |
+| scan_hard (both) | **not exact, recorded as xfail**: Tesseract misreads digits (1 read as 4, 11.04 as 41.04) and loses one row date; the layout is read correctly and `balanceChainBreaks` flags the affected rows |
+
+Limits: one table layout only (separate Debit and Credit columns; a single signed Amount column or a Dr/Cr suffix is not
+read); wrapped description lines are ignored; a statement whose later pages have no header and different column positions
+would be mis-assigned (provenance says "previous page"); more than one Totals row (per-page subtotals) emits all of them.
+Column assignment cannot repair an OCR misread, only report what was printed.
+
 ## D1 accuracy evaluation (real pipeline)
 
 `tools/d1_accuracy_report.py` runs the **production pipeline** (`render_document` -> OCR -> `page.classifier` ->
