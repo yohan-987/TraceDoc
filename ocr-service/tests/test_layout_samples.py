@@ -85,3 +85,24 @@ def test_rows_and_totals_match_the_manifest(settings, put_original, doc_id):
     assert sum(Decimal(v) for v in got_credits) == Decimal(total_credits)
     assert sum(Decimal(v) for v in got_debits) == Decimal(total_debits)
     assert [f.fieldId for f in outcome.fields] == [f"TBL-{i:03d}" for i in range(1, len(outcome.fields) + 1)]
+
+
+def test_digital_pdf_uses_the_text_layer_and_s7a_debit_mismatch_is_exact(settings, put_original):
+    """S7a prints a debits total 100.00 higher than its rows add up to. With the text layer no digit is misread, so the
+    rows are read exactly (live OCR once read 52.21 as '§2.21' and made the check unverifiable)."""
+    path = SAMPLES / "dev" / "S7a_statement_arithmetic_error" / "bank_statement_S7a.pdf"
+    if not path.exists():
+        pytest.skip("S7a sample not present")
+    outcome = run(settings, put_original, {"file": str(path.relative_to(SAMPLES)), "doc_id": "S7a-stmt"})
+    assert outcome.statuses["layout.tables"] == "AVAILABLE"
+    assert {f.source for f in outcome.fields} == {"pdf_text_layer"}
+    assert all(f.validationStatus == "VALID" for f in outcome.fields)
+    assert _prov(outcome).config["page1.wordSource"] == "pdf_text_layer"
+    debits = sum(Decimal(f.normalizedValue) for f in outcome.fields if f.name == "debit_amount")
+    credits = sum(Decimal(f.normalizedValue) for f in outcome.fields if f.name == "txn_amount")
+    assert amounts(outcome, "total_debits") == ["2205.10"] and debits == Decimal("2105.10")
+    assert amounts(outcome, "total_credits") == ["5252.42"] and credits == Decimal("5252.42")
+
+
+def _prov(outcome):
+    return next(p for p in outcome.provenance if p.analyzer == "layout.tables")

@@ -1,6 +1,8 @@
 """Layout/table plugin (registered as "layout.tables"): bank-statement transaction rows and stated totals.
 
-Reads the OCR already in the shared context (never runs OCR unless nobody has), classifies the page like the field
+Reads the words of each page: the PDF text layer when the page has one (exact characters, so no digit can be misread;
+the field's source says "pdf_text_layer"), otherwise the OCR already in the shared context (never runs OCR unless nobody
+has). The text layer is the encoded text, not proof of what is visible; that comparison is not made here. Classifies the page like the field
 extractor does, and for bank-statement pages reads the table from word geometry (app/layout.py). Emitted fields:
   txn_amount     one per CREDIT row   (the backend sums these against total_credits)
   debit_amount   one per DEBIT row    (summed against total_debits)
@@ -24,6 +26,7 @@ from ..models import AnalyzerResult, ExtractedField, OcrPage, Region
 from ..ocr import OcrPageError, OcrUnavailableError, cached_page_ocr, get_page_ocr
 from ..ocr_core import page_timeout_s
 from ..registry import Analyzer, register_analyzer
+from ..textlayer import SOURCE as TEXT_LAYER, get_text_layer
 
 _BUDGET_FRACTION = 0.9
 _ROW_FIELD = {"debit": "debit_amount", "credit": "txn_amount"}
@@ -62,7 +65,13 @@ class LayoutTablesAnalyzer(Analyzer):
         cls_cfg = None
         cls_loaded = False
 
-        def add(name: str, cell: Cell, page: int, table: PageTable) -> None:
+        layer_pages = {}
+        try:
+            layer_pages = {n: tp.page for n, tp in get_text_layer(ctx).pages.items() if tp.page.words}
+        except Exception:  # noqa: BLE001 - the text layer is an optimisation; OCR is the fallback
+            layer_pages = {}
+
+        def add(name: str, cell: Cell, page: int, table: PageTable, source: str = "ocr") -> None:
             valid = cell.normalized is not None
             fields.append(ExtractedField(
                 fieldId=f"TBL-{len(fields) + 1:03d}", docId=ctx.doc_id, name=name, rawValue=cell.text,
@@ -70,10 +79,15 @@ class LayoutTablesAnalyzer(Analyzer):
                 extractionConfidence=_confidence(cfg, table, cell),
                 validationStatus="VALID" if valid else "INVALID_FORMAT",
                 region=Region(docId=ctx.doc_id, page=page, bbox=tuple(round(v, 6) for v in cell.bbox), label=name),
-                source="ocr"))
+                source=source))  # type: ignore[arg-type]
 
         for page in ctx.pages:
-            ocr_page: Optional[OcrPage] = cached_page_ocr(ctx, page.page)
+            classified = classes.get(page.page)
+            layer_page = layer_pages.get(page.page)
+            ocr_page: Optional[OcrPage] = layer_page
+            source = TEXT_LAYER if layer_page is not None else "ocr"
+            if ocr_page is None:
+                ocr_page = cached_page_ocr(ctx, page.page)
             if ocr_page is None:
                 remaining = deadline - time.monotonic()
                 try:
@@ -86,7 +100,6 @@ class LayoutTablesAnalyzer(Analyzer):
                 except OcrPageError as exc:
                     problems[page.page] = str(exc)
                     continue
-            classified = classes.get(page.page)
             if classified is not None:
                 doc_type = classified.docType
             else:
@@ -99,6 +112,7 @@ class LayoutTablesAnalyzer(Analyzer):
                 doc_type = classify_page(ocr_page, cls_cfg).docType if cls_cfg else "UNKNOWN"
             prefix = f"page{page.page}"
             notes[f"{prefix}.docType"] = doc_type
+            notes[f"{prefix}.wordSource"] = source
             if doc_type != "bank_statement":
                 notes[f"{prefix}.skipped"] = "not a bank statement page"
                 continue
@@ -125,7 +139,7 @@ class LayoutTablesAnalyzer(Analyzer):
                 for role in ("debit", "credit"):
                     cell = row.cells.get(role)
                     if cell is not None:
-                        add(_ROW_FIELD[role], cell, page.page, table)
+                        add(_ROW_FIELD[role], cell, page.page, table, source)
                         if cell.normalized is None:
                             unreadable += 1
                             bad.append(f"row{i}:{role} unreadable")
@@ -136,7 +150,7 @@ class LayoutTablesAnalyzer(Analyzer):
                 for role in ("credit", "debit"):
                     cell = table.totals.get(role)
                     if cell is not None:
-                        add(_TOTAL_FIELD[role], cell, page.page, table)
+                        add(_TOTAL_FIELD[role], cell, page.page, table, source)
                         if cell.normalized is None:
                             bad.append(f"totals:{role} unreadable")
             bad.extend(f"totals:{m}" for m in table.totals_problems)
