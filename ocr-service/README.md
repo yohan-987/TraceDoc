@@ -277,7 +277,7 @@ The `page.field_extractor` analyzer (`app/analyzers/field_extractor.py`; engine 
 | docType | fields |
 | --- | --- |
 | `id_card` | `full_name`, `dob`, `id_number`, `address_permanent` |
-| `application_form` | `full_name`, `dob`, `address_permanent`, `address_current`, `requested_amount`, `signature` (region only) |
+| `application_form` | `full_name`, `id_number`, `dob`, `address_permanent`, `address_current`, `requested_amount`, `application_date`, `signature` (region only) |
 | `bank_statement` | `account_holder`, `account_number`, `opening_balance`, `closing_balance`, `total` |
 
 The page type comes from the O3 classifier (`classification_store`); if it did not run, the same pure `classify_page` is applied
@@ -296,8 +296,11 @@ A missing or malformed schema or settings file makes the analyzer report `ERROR`
 
 ### Strategy
 
-1. Find the label on an OCR line; the value is the text after it on that line (cut before the next `Label:`), else the value on
-   the same row to its right, else on the line(s) below. Address-like fields append up to `continuationLines` unlabeled lines.
+1. Find the label on an OCR line. The value is then looked for in three places: after the label on the same line (cut before
+   the next label), to its right on the same row, and **below** it (label above value, inside the label's column). The nearest
+   candidate that validates for the field type wins; if none validates, the nearest non-label text is returned flagged
+   `INVALID_FORMAT` (never dropped). Address-like fields append up to `continuationLines` unlabeled lines. See "Label-to-value
+   association" below.
 2. The pattern (`@date`, `@amount`, `@digits` or a regex) narrows the value. Text under a label that does not fit the pattern is
    still returned (raw), flagged `INVALID_FORMAT` and with lower extractionConfidence.
 3. `rawValue` is the exact OCR text of the value (words joined by single spaces); it is never altered.
@@ -316,6 +319,91 @@ them un-normalized. Please confirm the convention with the samples owner.
 Low-confidence and invalid fields are **never dropped**: they are returned with their confidences and status, and listed in
 provenance (`page<N>.lowConfidence`, `.invalidFormat`, `.missing`). A field that is not found is not returned and not invented.
 The signature is only a box (`rawValue` empty, `ocrConfidence` 0.0, `NOT_CHECKED`): nothing is claimed about the signature.
+
+### Label-to-value association (O4 fix)
+
+The first version took the next token or line after a label even when that text was itself another label or a format hint, so a
+tampered case with a real DOB conflict (S5a) produced no findings: the id card gave `dob = 'ISSUED'`, `id_number = 'EXPIRES'`, the
+form `full_name = 'ID number'`, `dob = '(YYYY-MM-DD)'`, `requested_amount = 'Term'`, the statement `account_holder = 'Account summary'`.
+
+What changed (`app/extract.py`, schemas, `_settings.yaml`):
+
+* **Label vocabulary.** A schema may list `labels:` (printed labels and headings that are not extracted fields: `ISSUED`, `EXPIRES`,
+  `Term`, `Guarantor ID number`, `Account summary` ...); `_settings.yaml` has a shared `labelVocabulary`. Together with every anchor
+  of the schema they form the vocabulary. Text made only of vocabulary labels, or only a format hint (`(YYYY-MM-DD)`, `(optional)`;
+  parenthesised text without letters, such as a negative amount, is not a hint), is **never returned as a value**. Vocabulary matching
+  tolerates the usual OCR look-alikes (`I`/`1`/`l`/`|`, `O`/`0`), so `1SSUED` and `1D NUMBER` are still recognised as labels. That tolerance is
+  used to recognise labels only, never to find a field's own anchor.
+* **Geometry, not line order.** Below a label the value is taken from the OCR **word boxes**: the nearest row of words inside the
+  label's column (from `geometry.columnLeftTolerance` left of the label to the start of the next label on its row, or overlapping a
+  right-aligned label). Words further left (a photo's OCR noise, another column) are excluded; a row that starts with another
+  column's label is skipped, a row of pure labels ends the search. Rows are formed by chaining word centres, so a slightly rotated
+  scan stays one row. Among labelled occurrences the top-most, left-most wins (reading order by geometry).
+* **Validated candidates first.** Candidate values must validate for the field type (date parses, ID format, amount parses, name looks
+  like a name); a validating candidate beats a nearer one that does not. A value on the label's own line counts as adjacent;
+  right-of-label and below-label candidates compete on box distance.
+* **Another person's label is not the anchor.** An anchor match lying inside a longer known label (`full name` inside `Guarantor full
+  name`) is ignored, so the guarantor's name/ID/DOB are never returned as the applicant's (they are reported missing instead).
+* **ID and account formats.** The generic ID format now requires at least one digit. Account numbers keep a printed letter prefix
+  (`NSB-5404-470671`: new `account` normalizer and `@account` pattern; purely numeric numbers are still digits-only).
+* **Bare labels.** `^name` / `^address` anchors also match a label alone on its line (`NAME`, no colon).
+* **New form fields:** `id_number` and `application_date` (`application_form`).
+* **D1 harness:** `app/d1_eval.py` maps the manifest's `loan_application` to the `application_form` schema and
+  `date_of_birth`/`permanent_address`/`current_address`/`requested_loan_amount` to the schema names. Before this, loan forms and every
+  date of birth were reported NOT EVALUATED, so these fields were never measured. Only names are mapped, never values.
+
+Measured with `python tools/d1_accuracy_report.py` (real Tesseract pipeline, 24 D1 files: 3 document types x 2 people x original /
+recompressed / scan / scan_hard). **Both columns use the same extended harness**; "before" is the previous extractor (commit
+`3a06ce4`). With the harness as it was, the previous extractor scored 18/48 (37.5%) on the 48 fields it could evaluate.
+
+| docType | field | before | after |
+| --- | --- | --- | --- |
+| bank_statement | account_holder | 2/8 (25%) | 6/8 (75%) |
+| bank_statement | account_number | 0/8 (0%) | 7/8 (88%) |
+| bank_statement | closing_balance | 8/8 (100%) | 8/8 (100%) |
+| bank_statement | opening_balance | 8/8 (100%) | 8/8 (100%) |
+| id_card | date_of_birth | 0/8 (0%) | 8/8 (100%) |
+| id_card | full_name | 0/8 (0%) | 0/8 (0%) |
+| id_card | id_number | 0/8 (0%) | 6/8 (75%) |
+| id_card | permanent_address | 0/8 (0%) | 0/8 (0%) |
+| loan_application | application_date | not evaluated | 8/8 (100%) |
+| loan_application | current_address | 6/8 (75%) | 6/8 (75%) |
+| loan_application | date_of_birth | 0/8 (0%) | 8/8 (100%) |
+| loan_application | full_name | 0/8 (0%) | 5/8 (62%) |
+| loan_application | id_number | not evaluated | 6/8 (75%) |
+| loan_application | permanent_address | 8/8 (100%) | 8/8 (100%) |
+| loan_application | requested_loan_amount | 0/8 (0%) | 7/8 (88%) |
+| **all evaluated** | | **32/104 (30.8%)** | **91/120 (75.8%)** |
+
+Like for like (excluding the two fields added to the form schema): 32/104 (30.8%) before, 77/104 (74.0%) after. By variant after the
+fix: original 25/30, recompressed 24/30, scan 24/30, scan_hard 18/30 (evaluated fields).
+
+Live pipeline on `samples/dev/S5a_tampered_with_inconsistency` (Tesseract): id card `full_name` PRIYANKA WHITLOCK, `dob`
+1980-09-18, `id_number` SMP-1701-9929-AK; loan form `full_name` Priyanka Whitlock, `dob` 1983-09-18 (the DOB conflict is now visible),
+`id_number` SMP-1701-9929-AK, `requested_amount` 20500.00, `application_date` 2026-03-14; statement `account_holder` Priyanka Whitlock,
+`account_number` NSB-4596-913745.
+
+Tests: `tests/test_extract_association.py` (an observed failure each, a "label is never a value" test, guarantor, garbled labels,
+skew, `INVALID_FORMAT` kept). Full suite: 585 passed, 4 skipped, 4 xfailed.
+
+#### Remaining misses (not fixed, not hidden)
+
+* **ID card `full_name` and `permanent_address` (0/8 each) are not association errors.** The card prints them in capitals
+  (`BRADLEY EVANS`, `06028 BARRY HARBORS PORT JOSEPH, GU 44394`) while the manifest holds `Bradley Evans` / `06028 Barry Harbors, Port
+  Joseph, ...`; the report compares exactly. `rawValue` is the printed text and is never altered; no case or comma is guessed into
+  `normalizedValue`. Downstream comparison of names across documents should therefore be case-insensitive.
+* **OCR errors in the value or in the field's own label:** `Marisol lvanova` (I read as l) on 2 loan forms; a stray `.` inside a name
+  (`Marisol . Ivanova`); `id_number` MISSING on 4 scan/scan_hard files (in the cases inspected its own label is misread, and a field is not guessed from a label that is not recognised).
+* **scan_hard** (rotated, noisy): `account_number` cut to `NSB-51`; `account_holder` merges neighbouring rows
+  (`Marisol Address Ivanova ...`: chaining word centres follows the rotation but can join rows when the skew exceeds the line pitch);
+  `requested_amount` MISSING on one form; an address continuation runs into the next section heading (`... 2. Loan request`) on two forms.
+* `total` (bank statement) is no longer returned for a row such as `Totals / closing balance 1,667.36 5,081.26 5,517.57`: the
+  value would start at another label. Table totals belong to `layout.tables`.
+* Guarantor fields are not extracted (no schema field); they are only prevented from being read as the applicant's.
+* The D1 report still evaluates only fields that have a schema field (744 of 864 expected fields are NOT EVALUATED: transactions,
+  issue/expiry dates, guarantor, ...). No D1 accuracy claim should be made beyond the 120 evaluated fields.
+* No sample was special-cased and no threshold tuned to pass; `columnLeftTolerance` (0.02, about one text-line height) was fixed
+  from the layout before measuring.
 
 ### Status and provenance
 
@@ -337,7 +425,7 @@ fixtures are missing, it says so and compares nothing. The manifest shape accept
 
 Anchor/regex heuristics for English labels; no table parsing (balances come from labelled lines); names, addresses and IDs are
 checked for format only; the `total` field takes the first amount on its row (lower confidence when several); the ID-number and
-account-number formats are generic placeholders (made-up formats), to be tightened once the real sample formats are known;
+account-number formats are still generic (ID: 5-25 letters/digits/hyphens with a digit; account: optional letter prefix plus digit groups);
 text-layer words are not used (source is always `ocr`).
 
 ## Image forensics (batch O8)

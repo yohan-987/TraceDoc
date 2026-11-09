@@ -8,18 +8,18 @@ fields:
     strategies:
       - kind: anchor
         anchors: ["account holder(?:'?s)?(?: name)?", "name of (?:the )?account holder", "account name",
-                  "customer name", "^name(?=\\s*[:\\-])"]
+                  "customer name", "^name(?=\\s*(?:[:\\-]|$))"]
         confidence: 0.90
 
   - name: account_number
     semanticType: account_number
-    normalizer: digits
+    normalizer: account       # keeps a printed letter prefix ("NSB-5404-470671"); purely numeric numbers lose spaces/hyphens
     validators:
-      - {name: regex, pattern: "^[0-9]{6,20}$"}
+      - {name: regex, pattern: "^(?:[A-Za-z]{1,6}-?)?[0-9][0-9\\-]{4,22}[0-9]$"}
     strategies:
       - kind: anchor
         anchors: ["account (?:number|no\\.?)", "a/c (?:number|no\\.?)", "acct\\.? (?:number|no\\.?)"]
-        pattern: "@digits"
+        pattern: "@account"
         confidence: 0.92
 
   - name: opening_balance
@@ -54,3 +54,16 @@ fields:
         pattern: "@amount"
         pick: first            # a totals row may hold several amounts: more than one lowers extractionConfidence
         confidence: 0.80
+
+labels:
+  - "address"
+  - "account summary"
+  - "account statement"
+  - "statement period"
+  - "total debits"
+  - "total credits"
+  - "date"
+  - "description"
+  - "debit"
+  - "credit"
+  - "balance"

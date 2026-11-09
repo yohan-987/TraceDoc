@@ -19,6 +19,7 @@ from .extract_normalize import NORMALIZERS, VALIDATORS, resolve_pattern
 SCHEMAS_DIR = SERVICE_ROOT / "app" / "schemas"
 SUPPORTED_DOC_TYPES = ("id_card", "application_form", "bank_statement")
 KINDS = ("anchor", "composite", "anchor_region")
+_GEOMETRY_DEFAULTS = {"columnLeftTolerance": 0.02}
 _SCORING_KEYS = ("regionMatchBonus", "regionMissPenalty", "multipleCandidatesPenalty", "patternMissPenalty",
                  "rightPlacementPenalty", "belowPlacementPenalty", "continuationPenalty")
 
@@ -56,6 +57,7 @@ class DocSchema:
     docType: str
     schemaVersion: str
     fields: Tuple[FieldSpec, ...]
+    labels: Tuple[str, ...] = ()   # printed labels / headings of this document type that are not extracted fields (regexes)
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,8 @@ class ExtractorSettings:
     lowExtractionConfidence: float
     dateOrder: Optional[str]
     scoring: Mapping[str, float]
+    labelVocabulary: Tuple[str, ...] = ()               # form words shared by every document type (regexes)
+    geometry: Mapping[str, float] = None                # label-to-value geometry (page fractions); see _settings.yaml
 
 
 def schemas_dir() -> Path:
@@ -133,6 +137,15 @@ def _strategy(raw: Any, where: str) -> Strategy:
     return Strategy(kind, confidence, anchors=anchors, pattern=pattern, pick=pick)
 
 
+def _labels(value: Any, where: str) -> Tuple[str, ...]:
+    """Optional list of label regexes (printed words that are never a field value). May be empty."""
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise SchemaError(f"{where} must be a list of regexes")
+    return tuple(_regex(v, f"{where}[{i}]") for i, v in enumerate(value))
+
+
 def _validators(raw: Any, where: str) -> Tuple[Tuple[str, Mapping[str, Any]], ...]:
     if not isinstance(raw, list):
         raise SchemaError(f"{where} must be a list")
@@ -193,7 +206,7 @@ def load_schema(doc_type: str, directory: Optional[Path] = None) -> DocSchema:
     names = [f.name for f in fields]
     if len(set(names)) != len(names):
         raise SchemaError(f"{path.name}: duplicate field names")
-    return DocSchema(doc_type, version, fields)
+    return DocSchema(doc_type, version, fields, _labels(data.get("labels"), f"{path.name}: labels"))
 
 
 def load_settings(directory: Optional[Path] = None) -> ExtractorSettings:
@@ -208,7 +221,14 @@ def load_settings(directory: Optional[Path] = None) -> ExtractorSettings:
     version = data.get("settingsVersion")
     if not isinstance(version, str) or not version:
         raise SchemaError(f"{path.name}: settingsVersion (string) is required")
+    geometry = dict(_GEOMETRY_DEFAULTS)
+    raw_geometry = data.get("geometry")
+    if raw_geometry is not None:
+        if not isinstance(raw_geometry, dict) or any(k not in _GEOMETRY_DEFAULTS for k in raw_geometry):
+            raise SchemaError(f"{path.name}: geometry may only define {list(_GEOMETRY_DEFAULTS)}")
+        geometry.update({k: _num(v, f"geometry.{k}", 0.0, 0.25) for k, v in raw_geometry.items()})
     return ExtractorSettings(
         version, _num(data.get("lowOcrConfidence"), "lowOcrConfidence"),
         _num(data.get("lowExtractionConfidence"), "lowExtractionConfidence"), order,
-        {k: _num(scoring[k], f"scoring.{k}") for k in _SCORING_KEYS})
+        {k: _num(scoring[k], f"scoring.{k}") for k in _SCORING_KEYS},
+        _labels(data.get("labelVocabulary"), f"{path.name}: labelVocabulary"), geometry)

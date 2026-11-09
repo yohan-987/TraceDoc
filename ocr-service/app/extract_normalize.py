@@ -18,9 +18,11 @@ PATTERN_ALIASES = {
     "@amount": r"(?<![\d.,/])[-(]?\s?(?:[$€£₹]|rs\.?|inr|usd|eur|gbp)?\s?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?\)?"
                r"(?![\d/]|\.\d|,\d)",
     "@digits": r"\d(?:[\d \-]*\d)?",
+    # an account number as printed: an optional letter prefix ("NSB-") followed by digit groups
+    "@account": r"(?:[A-Za-z]{1,6}\s?-\s?)?\d(?:[\d \-]*\d)?",
 }
 
-NORMALIZERS = ("text", "date", "amount", "digits", "id", "none")
+NORMALIZERS = ("text", "date", "amount", "digits", "account", "id", "none")
 VALIDATORS = ("person_name", "date", "amount", "address", "regex")
 
 
@@ -42,6 +44,16 @@ def normalize_digits(raw: str) -> Optional[str]:
     """Account-number style: drop spaces and hyphens only (no characters are guessed or replaced)."""
     value = re.sub(r"[\s\-]", "", raw)
     return value or None
+
+
+def normalize_account(raw: str) -> Optional[str]:
+    """Account number as printed. A purely numeric one is normalized like ``normalize_digits`` (spaces and hyphens dropped);
+    one with a letter prefix ("NSB-5404-470671") keeps its letters and hyphens and only loses whitespace, because dropping
+    the prefix or the hyphens would change what is printed."""
+    value = re.sub(r"\s+", "", raw)
+    if not value:
+        return None
+    return value if re.search(r"[A-Za-z]", value) else normalize_digits(raw)
 
 
 _MONTH_NUM = {m: i for i, m in enumerate(_MONTHS.split("|"), 1)}
@@ -136,6 +148,8 @@ def normalize(kind: str, raw: str, date_order: Optional[str]) -> Tuple[Optional[
         return normalize_amount(raw), False
     if kind == "digits":
         return normalize_digits(raw), False
+    if kind == "account":
+        return normalize_account(raw), False
     if kind == "id":
         return normalize_id(raw), False
     if kind == "text":

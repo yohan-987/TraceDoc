@@ -46,8 +46,8 @@ def test_fields_are_contract_objects_for_every_document_type(settings, tmp_path)
     seed_ocr(ctx, {n: make() for n, (make, _) in enumerate(pages, 1)})
     outcome = run_both(ctx)
     assert outcome.statuses == {"page.classifier": "AVAILABLE", NAME: "AVAILABLE"}
-    assert len(outcome.fields) == 4 + 6 + 5
-    assert [f.fieldId for f in outcome.fields] == [f"FLD-{i:03d}" for i in range(1, 16)]
+    assert len(outcome.fields) == 4 + 8 + 5
+    assert [f.fieldId for f in outcome.fields] == [f"FLD-{i:03d}" for i in range(1, 18)]
     for f in outcome.fields:
         assert isinstance(f, ExtractedField)
         ExtractedField.model_validate(f.model_dump())

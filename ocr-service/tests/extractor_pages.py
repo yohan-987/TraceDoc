@@ -11,10 +11,12 @@ ID_LINES = ["REPUBLIC OF EXAMPLELAND", "NATIONAL IDENTITY CARD", "Full name: JAN
 ID_EXPECTED = {"full_name": "JANE ALICE SAMPLE", "dob": "1990-08-12", "id_number": "000-FICTIONAL-01",
                "address_permanent": "12 Fictional Road Example Town 000000"}
 
-FORM_LINES = ["LOAN APPLICATION FORM", "Full name of applicant: John Q Sample", "Date of birth: 01/02/1985",
+FORM_LINES = ["LOAN APPLICATION FORM", "Application date: 14/09/2026", "Full name of applicant: John Q Sample",
+              "ID number: 000-FICTIONAL-02", "Date of birth: 01/02/1985",
               "Permanent address: 12 Fictional Road", "Example Town 000000", "Current address: 7 Sample Street",
               "Sample City 111111", "Requested amount: 250,000.00", "Signature: ________"]
-FORM_EXPECTED = {"full_name": "John Q Sample", "dob": "1985-02-01",
+FORM_EXPECTED = {"full_name": "John Q Sample", "dob": "1985-02-01", "id_number": "000-FICTIONAL-02",
+                 "application_date": "2026-09-14",
                  "address_permanent": "12 Fictional Road Example Town 000000",
                  "address_current": "7 Sample Street Sample City 111111", "requested_amount": "250000.00"}  # + signature region
 

@@ -7,9 +7,19 @@ fields:
     validators: [person_name]
     strategies:
       - kind: anchor
-        anchors: ["full name(?: of (?:the )?applicant)?", "name of (?:the )?applicant", "applicant'?s? name", "^name(?=\\s*[:\\-])",
+        anchors: ["full name(?: of (?:the )?applicant)?", "name of (?:the )?applicant", "applicant'?s? name", "^name(?=\\s*(?:[:\\-]|$))",
                   "applicant(?=\\s*[:\\-])"]
         confidence: 0.90
+
+  - name: id_number
+    semanticType: id_number
+    normalizer: id
+    validators:
+      - {name: regex, pattern: "^(?=.*[0-9])[A-Za-z0-9][A-Za-z0-9\\-]{4,24}$"}
+    strategies:
+      - kind: anchor
+        anchors: ["id (?:number|no\\.?)", "identity (?:number|no\\.?)", "card (?:number|no\\.?)", "document (?:number|no\\.?)"]
+        confidence: 0.92
 
   - name: dob
     semanticType: dob
@@ -28,7 +38,7 @@ fields:
     continuationLines: 2
     strategies:
       - kind: anchor
-        anchors: ["permanent address", "address \\(permanent\\)", "residential address", "^address(?=\\s*[:\\-])"]
+        anchors: ["permanent address", "address \\(permanent\\)", "residential address", "^address(?=\\s*(?:[:\\-]|$))"]
         confidence: 0.88
 
   - name: address_current
@@ -53,6 +63,16 @@ fields:
         pick: first
         confidence: 0.92
 
+  - name: application_date
+    semanticType: application_date
+    normalizer: date
+    validators: [date]
+    strategies:
+      - kind: anchor
+        anchors: ["application date", "date of application", "^date(?=\\s*(?:[:\\-]|$))"]
+        pattern: "@date"
+        confidence: 0.85
+
   - name: signature            # a region observation only: no text is read and no claim is made about the signature
     semanticType: signature_region
     normalizer: none
@@ -64,3 +84,14 @@ fields:
         width: 0.30
         height: 0.05
         confidence: 0.50
+
+labels:
+  - "application (?:no|number)\\.?"
+  - "term"
+  - "(?:loan )?term"
+  - "(?:loan )?purpose(?: of loan)?"
+  - "relationship(?: to applicant)?"
+  - "guarantor (?:full name|id (?:number|no\\.?)|date of birth|signature|relationship)"
+  - "applicant signature"
+  - "guarantor signature"
+  - "date of signing"

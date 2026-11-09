@@ -18,3 +18,21 @@ scoring:
   rightPlacementPenalty: 0.05     # value found to the right of a label-only line
   belowPlacementPenalty: 0.10     # value found on the line(s) below a label-only line
   continuationPenalty: 0.00       # extra lines appended to a multi-line value (addresses)
+
+# Label-to-value geometry, as fractions of the page. A value is looked for beside its label or below it, inside the
+# label's column: from `columnLeftTolerance` to the left of the label's left edge to the start of the next label on the
+# same row. Words further left than that (a photo's OCR noise, a previous column) are not part of the value. About one
+# text-line height; chosen from the layout, not fitted to any sample.
+geometry:
+  columnLeftTolerance: 0.02
+
+# Form words shared by every document type. Together with every anchor of the schema and its `labels`, they make the
+# vocabulary of printed labels: such text is never returned as a field value.
+labelVocabulary:
+  - "date of birth"
+  - "full name"
+  - "id (?:number|no\\.?)"
+  - "account (?:number|no\\.?)"
+  - "address"
+  - "signature"
+  - "date"

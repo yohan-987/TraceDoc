@@ -9,7 +9,7 @@ fields:
     validators: [person_name]
     strategies:
       - kind: anchor
-        anchors: ["full name", "name of (?:the )?holder", "holder'?s? name", "^name(?=\\s*[:\\-])"]
+        anchors: ["full name", "name of (?:the )?holder", "holder'?s? name", "^name(?=\\s*(?:[:\\-]|$))"]
         confidence: 0.90
       - kind: composite          # "Given names" + "Surname" printed on separate labelled lines
         parts:
@@ -30,9 +30,10 @@ fields:
   - name: id_number
     semanticType: id_number
     normalizer: id
-    # The ID format is a made-up one; this generic check only requires 5-25 letters, digits or hyphens.
+    # Generic format (the real one is not known): 5-25 letters, digits or hyphens with at least one digit, so a printed
+    # word such as a neighbouring label never validates as an ID.
     validators:
-      - {name: regex, pattern: "^[A-Za-z0-9][A-Za-z0-9\\-]{4,24}$"}
+      - {name: regex, pattern: "^(?=.*[0-9])[A-Za-z0-9][A-Za-z0-9\\-]{4,24}$"}
     strategies:
       - kind: anchor
         anchors: ["id (?:number|no\\.?)", "identity (?:number|no\\.?)", "card (?:number|no\\.?)", "document (?:number|no\\.?)"]
@@ -45,5 +46,19 @@ fields:
     continuationLines: 2
     strategies:
       - kind: anchor
-        anchors: ["permanent address", "address \\(permanent\\)", "residential address", "^address(?=\\s*[:\\-])"]
+        anchors: ["permanent address", "address \\(permanent\\)", "residential address", "^address(?=\\s*(?:[:\\-]|$))"]
         confidence: 0.88
+
+# Printed labels and headings of this document type that are not extracted fields. They bound a value's column and are
+# never returned as a value (a label above/beside a value must not be read as the value of the neighbouring field).
+labels:
+  - "issued"
+  - "issue date"
+  - "date of issue"
+  - "expires(?: on)?"
+  - "expiry(?: date)?"
+  - "date of expiry"
+  - "sex"
+  - "nationality"
+  - "holder'?s? signature"
+  - "signature"

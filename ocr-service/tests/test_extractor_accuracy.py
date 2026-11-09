@@ -55,7 +55,7 @@ def test_synthetic_pages_accuracy_table(capsys):
     comparison = rep.compare(manifest, extracted, doc_types)
     emit(capsys, rep.format_report(comparison, "SYNTHETIC PAGES (self-authored expectations; NOT samples/manifest.json)"))
     assert doc_types == {"SYN-ID": "id_card", "SYN-FORM": "application_form", "SYN-STMT": "bank_statement"}
-    assert all(r.match for r in comparison.rows) and len(comparison.rows) == 14
+    assert all(r.match for r in comparison.rows) and len(comparison.rows) == 16
     assert [u[2] for u in comparison.unexpected] == ["signature"]      # extracted but not expected: reported separately
 
 

@@ -28,6 +28,24 @@ NOT_EVALUATED, FAILED, UNEXPECTED = "NOT EVALUATED", "FAILED", "UNEXPECTED"
 STATUS_OK, STATUS_ERROR, STATUS_UNAVAILABLE = "OK", "ERROR", "UNAVAILABLE"
 
 
+# ----------------------------------------------------------------------------- manifest names -> O4 schema names
+
+# The D1 manifest and the O4 schemas were written separately and name some things differently. Only the NAMES are mapped
+# here (for evaluation); values are never touched. Without this, loan forms ('loan_application') and fields such as
+# 'date_of_birth' were reported NOT EVALUATED and their extraction accuracy was never measured.
+DOC_TYPE_ALIASES = {"loan_application": "application_form"}
+FIELD_ALIASES = {"date_of_birth": "dob", "permanent_address": "address_permanent", "current_address": "address_current",
+                 "requested_loan_amount": "requested_amount"}
+
+
+def schema_doc_type(doc_type: str) -> str:
+    return DOC_TYPE_ALIASES.get(doc_type, doc_type)
+
+
+def schema_field_name(name: str) -> str:
+    return FIELD_ALIASES.get(name, name)
+
+
 # ----------------------------------------------------------------------------- manifest
 
 @dataclass(frozen=True)
@@ -244,7 +262,7 @@ def compare_sample(sample: D1Sample, supported: Optional[Set[str]], run_status: 
     failed = run_status != STATUS_OK
     groups: Dict[Tuple[str, int], List[ExpectedField]] = {}
     for e in sample.fields:
-        if supported is None or e.name not in supported:
+        if supported is None or schema_field_name(e.name) not in supported:
             why = (f"no O4 schema for doc_type '{sample.doc_type}'" if supported is None
                    else f"the O4 '{sample.doc_type}' schema has no field '{e.name}'")
             result.outcomes.append(FieldOutcome(e.name, e.page, NOT_EVALUATED, e, reason=why))
@@ -252,7 +270,7 @@ def compare_sample(sample: D1Sample, supported: Optional[Set[str]], run_status: 
             result.outcomes.append(FieldOutcome(e.name, e.page, FAILED, e,
                                                 reason=f"sample {run_status}: " + "; ".join(reasons)[:200]))
         else:
-            groups.setdefault((e.name, e.page), []).append(e)
+            groups.setdefault((schema_field_name(e.name), e.page), []).append(e)
     if failed:
         return result
     pool: Dict[Tuple[str, int], List[Any]] = {}
@@ -432,7 +450,7 @@ def supported_fields(doc_type: str) -> Optional[Set[str]]:
     """Field names of the O4 schema for ``doc_type`` (None when there is no schema or it cannot be loaded)."""
     from .extract_schema import SchemaError, load_schema
     try:
-        return {f.name for f in load_schema(doc_type).fields}
+        return {f.name for f in load_schema(schema_doc_type(doc_type)).fields}
     except SchemaError:
         return None
 

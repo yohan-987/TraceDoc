@@ -7,7 +7,7 @@ from app import extract_schema as s
 
 REQUIRED = {
     "id_card": ["full_name", "dob", "id_number", "address_permanent"],
-    "application_form": ["full_name", "dob", "address_permanent", "address_current", "requested_amount", "signature"],
+    "application_form": ["full_name", "id_number", "dob", "address_permanent", "address_current", "requested_amount", "application_date", "signature"],
     "bank_statement": ["account_holder", "account_number", "opening_balance", "closing_balance", "total"],
 }
 
